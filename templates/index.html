@@ -61,7 +61,7 @@
                     </div>
                     
                     <!-- User Picker -->
-                    <div class="user-picker" id="user-picker">
+                    <div class="user-picker" id="user-picker-container">
                         <p class="user-picker-label">Selecciona tu usuario</p>
                         <div class="user-picker-grid" id="user-picker-grid">
                             <!-- populated by JS -->
@@ -71,31 +71,40 @@
                         </div>
                     </div>
 
-                    <form id="login-form">
-                        <div class="form-group-login">
-                            <label>USUARIO</label>
-                            <div class="input-with-icon">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                                </svg>
-                                <input type="text" id="login-username" required placeholder="Ingresa tu usuario">
+                    <!-- Password Form (Initially Hidden) -->
+                    <div id="password-entry-container" class="hidden">
+                        <button type="button" class="btn btn-ghost btn-sm login-back-btn" id="btn-back-to-picker">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 12H5M12 19l-7-7 7-7"/>
+                            </svg>
+                            Cambiar usuario
+                        </button>
+
+                        <div class="selected-user-display" id="selected-user-display">
+                            <div class="avatar-lg" id="selected-user-avatar">AD</div>
+                            <h2 id="selected-user-name">Admin</h2>
+                            <p>Ingresa tu contraseña para continuar</p>
+                        </div>
+
+                        <form id="login-form">
+                            <!-- Hidden username field to keep form functionality -->
+                            <input type="hidden" id="login-username">
+                            
+                            <div class="form-group-login">
+                                <label>CONTRASEÑA</label>
+                                <div class="input-with-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                    </svg>
+                                    <input type="password" id="login-password" required placeholder="••••••••">
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="form-group-login">
-                            <label>CONTRASEÑA</label>
-                            <div class="input-with-icon">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                                </svg>
-                                <input type="password" id="login-password" required placeholder="••••••••">
+                            
+                            <div class="form-actions-login">
+                                <button type="submit" class="btn btn-login">Iniciar Sesión</button>
                             </div>
-                        </div>
-                        
-                        <div class="form-actions-login">
-                            <button type="submit" class="btn btn-login">Iniciar Sesión</button>
-                        </div>
-                    </form>
+                        </form>
+                    </div>
                 </div>
                 <!-- Version moved outside the card for cleanliness -->
                 <div class="login-footer">

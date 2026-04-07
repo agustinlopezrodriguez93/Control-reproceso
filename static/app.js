@@ -139,12 +139,23 @@ const Store = {
         users: [],
         processes: [],
         availableSKUs: [],
-        performanceData: []
+        performanceData: [],
+        publicUsers: []
     },
 
     async init() {
         const token = API.getToken();
-        if (!token) return false;
+        if (!token) {
+            // Fetch public users for the login screen
+            try {
+                const data = await API.get('/api/users-public');
+                this.state.publicUsers = data.users || [];
+                UI.renderUserPicker();
+            } catch (err) {
+                console.error("Failed to fetch public users:", err);
+            }
+            return false;
+        }
 
         try {
             // Check if token is valid and get user info
@@ -164,6 +175,10 @@ const Store = {
         } catch (err) {
             console.error("Auth check failed:", err);
             localStorage.removeItem('reproceso_token');
+            // Fetch public users if token was invalid
+            const data = await API.get('/api/users-public');
+            this.state.publicUsers = data.users || [];
+            UI.renderUserPicker();
         }
         return false;
     },
@@ -300,6 +315,9 @@ const UI = {
     init() {
         this.setupEventListeners();
         this.navigateTo('view-login');
+        if (Store.state.publicUsers.length > 0) {
+            this.renderUserPicker();
+        }
     },
 
     navigateTo(viewId, contextId = null) {
@@ -413,6 +431,52 @@ const UI = {
 
             grid.appendChild(item);
         });
+    },
+
+    renderUserPicker() {
+        const grid = document.getElementById('user-picker-grid');
+        if (!grid) return;
+
+        grid.innerHTML = '';
+        Store.state.publicUsers.forEach(user => {
+            const card = document.createElement('div');
+            card.className = 'user-card-picker';
+            
+            const initials = user.nombre.substring(0, 2).toUpperCase();
+            
+            card.innerHTML = `
+                <div class="avatar-lg">${user.avatar || initials}</div>
+                <div class="user-name">${user.nombre}</div>
+            `;
+            
+            card.onclick = () => this.selectUser(user);
+            grid.appendChild(card);
+        });
+    },
+
+    selectUser(user) {
+        // Transition UI
+        document.getElementById('user-picker-container').classList.add('hidden');
+        document.getElementById('password-entry-container').classList.remove('hidden');
+        
+        // Populate display
+        document.getElementById('selected-user-name').innerText = user.nombre;
+        const initials = user.nombre.substring(0, 2).toUpperCase();
+        document.getElementById('selected-user-avatar').innerText = user.avatar || initials;
+        
+        // Set hidden field
+        document.getElementById('login-username').value = user.nombre;
+        
+        // Focus password
+        setTimeout(() => {
+            document.getElementById('login-password').focus();
+        }, 100);
+    },
+
+    goBackToUserPicker() {
+        document.getElementById('password-entry-container').classList.add('hidden');
+        document.getElementById('user-picker-container').classList.remove('hidden');
+        document.getElementById('login-password').value = '';
     },
 
     async renderDashboard() {
@@ -952,6 +1016,9 @@ UI.setupEventListeners = function () {
 
     // Login Form
     document.getElementById('login-form').onsubmit = app.handleLogin;
+    
+    const btnBackToPicker = document.getElementById('btn-back-to-picker');
+    if (btnBackToPicker) btnBackToPicker.onclick = () => UI.goBackToUserPicker();
 
     const btnPerf = document.getElementById('btn-view-performance');
     if (btnPerf) btnPerf.onclick = () => UI.navigateTo('view-performance');
