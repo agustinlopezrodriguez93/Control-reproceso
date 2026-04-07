@@ -91,11 +91,11 @@ def init_db():
         count = cur.fetchone()[0]
 
         if count == 0:
-            # Usuarios por defecto: Maestro/1234, OperariosN/1234,
+            # Usuarios por defecto: Admin/mega123, OperariosN/1234,
             # admin/admin123 (rol Maestro), viewer/viewer123 (rol Operario)
             users = [
                 # (nombre, rol, avatar, password)
-                ("Maestro",    "Maestro",  "S",  "1234"),
+                ("Admin",      "Maestro",  "AD", "mega123"),
                 ("Usuario 1",  "Operario", "U1", "1234"),
                 ("Usuario 2",  "Operario", "U2", "1234"),
                 ("Usuario 3",  "Operario", "U3", "1234"),
@@ -109,7 +109,7 @@ def init_db():
                     (nombre, rol, avatar, get_password_hash(pw))
                 )
             conn.commit()
-            print("[DB] Usuarios por defecto creados (admin/admin123, viewer/viewer123, Maestro/1234).")
+            print("[DB] Usuarios por defecto creados (admin/admin123, viewer/viewer123, Admin/mega123).")
         else:
             # Asegurar que los usuarios admin/viewer existen aunque la tabla ya tenga datos
             for nombre, rol, avatar, pw in [
