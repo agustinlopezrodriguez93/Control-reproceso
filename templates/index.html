@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRD+ Demo | Consolidación SKU</title>
+    <link rel="stylesheet" href="/static/app.css?v=3">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header class="app-header" id="main-header">
+        <div class="header-left">
+            <img src="/static/image.png" alt="Logo" class="app-logo">
+            <span class="header-title">Control de Reproceso</span>
+        </div>
+        <div class="header-right">
+            <div id="urgent-indicator" class="urgent-indicator hidden">
+                <span class="pulse"></span> URGENCIA ACTIVA
+            </div>
+            <div class="user-profile hidden" id="header-user-profile">
+                <div class="avatar" id="header-avatar">OP</div>
+                <div class="user-info">
+                    <span class="name" id="current-user-name">Operario A</span>
+                    <span class="role" id="current-user-role">Operador</span>
+                </div>
+                <button id="btn-logout" class="btn btn-ghost" title="Salir">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="app-container">
+
+        <!-- View: Login -->
+        <section id="view-login" class="view">
+            <div class="login-container">
+                <div class="login-card">
+                    <div class="login-header">
+                        <div class="login-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                                <path d="m3.3 7 8.7 5 8.7-5"/>
+                                <path d="M12 22V12"/>
+                            </svg>
+                        </div>
+                        <h1>Control Megamarket</h1>
+                        <p>Gestión de Reproceso SKU</p>
+                    </div>
+                    
+                    <!-- User Picker -->
+                    <div class="user-picker" id="user-picker">
+                        <p class="user-picker-label">Selecciona tu usuario</p>
+                        <div class="user-picker-grid" id="user-picker-grid">
+                            <!-- populated by JS -->
+                            <div class="user-picker-skeleton"></div>
+                            <div class="user-picker-skeleton"></div>
+                            <div class="user-picker-skeleton"></div>
+                        </div>
+                    </div>
+
+                    <form id="login-form">
+                        <div class="form-group-login">
+                            <label>USUARIO</label>
+                            <div class="input-with-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                                </svg>
+                                <input type="text" id="login-username" required placeholder="Ingresa tu usuario">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group-login">
+                            <label>CONTRASEÑA</label>
+                            <div class="input-with-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                </svg>
+                                <input type="password" id="login-password" required placeholder="••••••••">
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions-login">
+                            <button type="submit" class="btn btn-login">Iniciar Sesión</button>
+                        </div>
+                    </form>
+                </div>
+                <!-- Version moved outside the card for cleanliness -->
+                <div class="login-footer">
+                    Megamarket — v1.0
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Dashboard -->
+        <section id="view-dashboard" class="view hidden">
+            <div class="view-header">
+                <h1>Mis Procesos</h1>
+                <div class="header-actions">
+                    <button id="btn-view-performance" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M18 20V10M12 20V4M6 20v-6" />
+                        </svg>
+                        Ver Rendimiento
+                    </button>
+                    <button id="btn-view-users" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        Usuarios
+                    </button>
+                    <button id="btn-view-audit" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        Auditoría
+                    </button>
+                    <button id="btn-new-process" class="btn btn-primary">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                        Nuevo Proceso
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>SKU Destino</th>
+                                <th>Operario</th>
+                                <th>Estado</th>
+                                <th>Tiempo Total</th>
+                                <th>Prioridad</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="process-list-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="empty-state" class="empty-state hidden">
+                    <p>No hay procesos registrados.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Create Process -->
+        <section id="view-create" class="view hidden">
+            <div class="view-header">
+                <h1>Nuevo Proceso</h1>
+                <button id="btn-cancel-create" class="btn btn-ghost">Cancelar</button>
+            </div>
+
+            <div class="card form-card">
+                <form id="create-process-form">
+
+
+                    <div class="form-group">
+                        <label>SKU Destino <span class="required">*</span></label>
+                        <!-- Hidden input to store chosen SKU -->
+                        <input type="hidden" id="input-sku-dest" value="">
+                        <div id="sku-picker-grid" class="sku-grid">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- SKU Origen Removed as per request -->
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Iniciar Proceso</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- View: Performance -->
+        <section id="view-performance" class="view hidden">
+            <div class="view-header">
+                <div class="header-left-nav">
+                    <button class="btn btn-secondary btn-back" onclick="UI.navigateTo('view-dashboard')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <h2>Rendimiento Global</h2>
+                </div>
+                <div class="header-actions">
+                    <select id="operator-compare-select" class="btn btn-secondary" onchange="app.loadOperatorKPIs(this.value)">
+                        <option value="">Comparar Operario...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="container">
+                <!-- KPI Cards Row -->
+                <div class="performance-grid">
+                    <div class="perf-card">
+                        <span class="label">Procesos Activos</span>
+                        <div class="value" id="kpi-active">-</div>
+                    </div>
+                    <div class="perf-card">
+                        <span class="label">Terminados Hoy</span>
+                        <div class="value" id="kpi-finished-today">-</div>
+                    </div>
+                    <div class="perf-card">
+                        <span class="label">Promedio de Tarea</span>
+                        <div class="value" id="kpi-avg-time">-</div>
+                    </div>
+                    <div class="perf-card">
+                        <span class="label">Urgencias Pendientes</span>
+                        <div class="value highlight-danger" id="kpi-urgent-count">-</div>
+                    </div>
+                </div>
+
+                <div class="dashboard-charts-grid">
+                    <!-- Main Comparison Chart -->
+                    <div class="chart-container-large card">
+                        <div class="card-header">
+                            <h3>Comparativa de Efficiencia (Minutos/Tarea)</h3>
+                            <p class="subtitle">Individual vs Promedio General</p>
+                        </div>
+                        <div class="canvas-wrapper">
+                            <canvas id="chart-efficiency-compare"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- SKU Distribution -->
+                    <div class="chart-container-small card">
+                        <div class="card-header">
+                            <h3>Distribución de SKUs</h3>
+                        </div>
+                        <div class="canvas-wrapper">
+                            <canvas id="chart-sku-distro"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Operator Ranking Table -->
+                <div class="card mt-2">
+                    <div class="card-header">
+                        <h3>Ranking de Productividad</h3>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>OPERARIO</th>
+                                <th>COMPLETADOS</th>
+                                <th>RENDIMIENTO (%)</th>
+                                <th>PROMEDIO (MIN)</th>
+                                <th>ACCIÓN</th>
+                            </tr>
+                        </thead>
+                        <tbody id="performance-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Gestión Usuarios (Maestro Only) -->
+        <section id="view-users" class="view hidden">
+            <div class="view-header">
+                <div class="header-left-nav">
+                    <button class="btn btn-ghost btn-sm btn-back" onclick="UI.navigateTo('view-dashboard')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <h1>Gestión de Operarios</h1>
+                </div>
+                <button id="btn-add-user" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    Nuevo Operario
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Rol</th>
+                                <th>Avatar</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Auditoría (Maestro Only) -->
+        <section id="view-audit" class="view hidden">
+            <div class="view-header">
+                <div class="header-left-nav">
+                    <button class="btn btn-ghost btn-sm btn-back" onclick="UI.navigateTo('view-dashboard')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <h1>Registro de Auditoría</h1>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha/Hora</th>
+                                <th>Usuario</th>
+                                <th>Acción</th>
+                                <th>Detalles</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-table-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Process Detail (Active) -->
+        <section id="view-detail" class="view hidden">
+            <div class="view-header detail-header">
+                <button id="btn-back-dashboard" class="btn btn-ghost">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                    Volver
+                </button>
+                <div class="header-status">
+                    <span id="detail-sku-dest" class="detail-title">SKU-???</span>
+                    <span id="detail-status-badge" class="badge">ESTADO</span>
+                </div>
+                <div class="header-actions">
+                    <button id="btn-urgent" class="btn btn-danger-solid">⚠️ URGENTE</button>
+                </div>
+            </div>
+
+            <div class="grid-layout">
+                <!-- Info Panel -->
+                <div class="card info-panel">
+                    <h3>Detalles del Proceso</h3>
+                    <div class="info-row">
+                        <span class="label">Operario:</span>
+                        <span class="value" id="detail-operator">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Inicio:</span>
+                        <span class="value" id="detail-start-time">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Fin:</span>
+                        <span class="value" id="detail-end-time">-</span>
+                    </div>
+
+                    <!-- SKU Origen Display Removed -->
+                </div>
+
+                <!-- Status Panel (Replaces Timer) -->
+                <div class="card status-panel">
+                    <h3>Estado del Proceso</h3>
+
+                    <div class="status-display-container">
+                        <div id="large-status-badge" class="large-badge">
+                            En Preparación
+                        </div>
+                    </div>
+
+                    <div class="secondary-info-grid">
+                        <div class="info-item">
+                            <span class="label">Hora Inicio </span>
+                            <span class="value" id="status-start-time">--:--</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">Responsable</span>
+                            <span class="value secondary" id="status-operator">--</span>
+                        </div>
+                    </div>
+
+                    <div class="timer-controls">
+                        <!-- Botones dinámicos según estado -->
+                        <button id="btn-action-start" class="btn btn-success hidden">INICIAR </button>
+                        <button id="btn-action-pause" class="btn btn-warning hidden">PAUSA</button>
+                        <button id="btn-action-resume" class="btn btn-primary hidden">REANUDAR</button>
+                        <button id="btn-action-finish" class="btn btn-neutral hidden">FINALIZAR</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Global Components -->
+    <div id="snackbar-container"></div>
+
+    <!-- Modal Template -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal-card">
+            <h2 id="modal-title">Título</h2>
+            <p id="modal-message">Mensaje...</p>
+            <div id="modal-body"></div>
+            <div class="modal-actions">
+                <button id="modal-btn-cancel" class="btn btn-ghost">Cancelar</button>
+                <button id="modal-btn-confirm" class="btn btn-primary">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

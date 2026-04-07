@@ -1,0 +1,106 @@
+{
+    "mockData": {
+        "availableSKUs": [
+            "GCMD",
+            "GGAL070",
+            "IMOCA",
+            "IMOCP",
+            "MCCE",
+            "SCCA",
+            "SECC090",
+            "SECPI",
+            "SEKOF",
+            "SEKQB",
+            "SEKRN",
+            "SEPASP",
+            "SEPC",
+            "SEPEIC",
+            "SEPOD",
+            "SEPOF",
+            "SESCD",
+            "SGEP",
+            "SKPXL"
+        ],
+        "users": [
+            {
+                "name": "Maestro",
+                "role": "Maestro",
+                "avatar": "S"
+            },
+            {
+                "name": "Usuario 1",
+                "role": "Operario",
+                "avatar": "U1"
+            },
+            {
+                "name": "Usuario 2",
+                "role": "Operario",
+                "avatar": "U2"
+            },
+            {
+                "name": "Usuario 3",
+                "role": "Operario",
+                "avatar": "U3"
+            }
+        ],
+        "processes": [
+            {
+                "id": "mock-001",
+                "operator": "Usuario 1",
+                "skuDest": "SKU-DEMO-001",
+                "status": "FINALIZADO",
+                "createdAt": "2024-02-10T08:00:00.000Z",
+                "startTime": "2024-02-10T08:05:00.000Z",
+                "endTime": "2024-02-10T10:30:00.000Z",
+                "lastStateChange": "2024-02-10T10:30:00.000Z"
+            },
+            {
+                "id": "mock-002",
+                "operator": "Usuario 2",
+                "skuDest": "SKU-DEMO-002",
+                "status": "PAUSADO",
+                "createdAt": "2024-02-11T09:15:00.000Z",
+                "startTime": "2024-02-11T09:20:00.000Z",
+                "lastStateChange": "2024-02-11T09:45:00.000Z",
+                "pauses": [
+                    {
+                        "start": "2024-02-11T09:45:00.000Z",
+                        "end": null
+                    }
+                ]
+            },
+            {
+                "id": "mock-003",
+                "operator": "Usuario 1",
+                "skuDest": "SKU-DEMO-003",
+                "status": "PAUSADO",
+                "createdAt": "2024-02-11T10:00:00.000Z",
+                "startTime": "2024-02-11T10:05:00.000Z",
+                "lastStateChange": "2024-02-11T10:05:00.000Z"
+            }
+        ],
+        "performanceData": [
+            {
+                "user": "Usuario 1",
+                "completed": 24,
+                "avgTime": "1h 15m",
+                "efficiency": 92,
+                "trend": "up"
+            },
+            {
+                "user": "Usuario 2",
+                "completed": 18,
+                "avgTime": "1h 40m",
+                "efficiency": 85,
+                "trend": "down"
+            },
+            {
+                "user": "Usuario 3",
+                "completed": 21,
+                "avgTime": "1h 22m",
+                "efficiency": 89,
+                "trend": "stable"
+            }
+        ]
+    }
+}
