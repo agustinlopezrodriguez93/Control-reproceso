@@ -45,7 +45,7 @@ class CrearUsuarioRequest(BaseModel):
 
 # ─── Endpoints ─────────────────────────────────
 
-@router.get("/public/users")
+@router.get("/users-public")
 async def api_public_users():
     """Retorna lista de usuarios para mostrar en pantalla de login. No requiere autenticación."""
     usuarios = get_usuarios()
