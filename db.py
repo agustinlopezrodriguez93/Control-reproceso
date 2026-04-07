@@ -7,9 +7,15 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
+import logging
+
 load_dotenv()
 
 DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("Falta la variable de entorno DATABASE_URL")
+
+logger = logging.getLogger("reproceso.db")
 
 
 def get_db():
@@ -77,7 +83,7 @@ def init_db():
             WHERE table_name='reproceso_usuarios' AND column_name='password_hash'
         """)
         if not cur.fetchone():
-            print("[DB] Migración: Añadiendo columna password_hash...")
+            logger.info("[DB] Migración: Añadiendo columna password_hash...")
             cur.execute("ALTER TABLE reproceso_usuarios ADD COLUMN password_hash TEXT")
 
         conn.commit()
@@ -109,7 +115,7 @@ def init_db():
                     (nombre, rol, avatar, get_password_hash(pw))
                 )
             conn.commit()
-            print("[DB] Usuarios por defecto creados (admin/admin123, viewer/viewer123, Admin/mega123).")
+            logger.info("[DB] Usuarios por defecto creados (admin/admin123, viewer/viewer123, Admin/mega123).")
         else:
             # Asegurar que los usuarios admin/viewer existen aunque la tabla ya tenga datos
             for nombre, rol, avatar, pw in [
@@ -122,7 +128,7 @@ def init_db():
                     (nombre, rol, avatar, get_password_hash(pw))
                 )
             conn.commit()
-            print("[DB] Usuarios admin/viewer verificados.")
+            logger.info("[DB] Usuarios admin/viewer verificados.")
 
         # Seed default SKUs if empty
         cur.execute("SELECT COUNT(*) FROM reproceso_skus")
@@ -140,12 +146,12 @@ def init_db():
                     (sku,)
                 )
             conn.commit()
-            print("[DB] SKUs por defecto creados.")
+            logger.info("[DB] SKUs por defecto creados.")
 
         cur.close()
     finally:
         conn.close()
-    print("[DB] Control Reproceso DB initialized on PostgreSQL.")
+    logger.info("[DB] Control Reproceso DB initialized on PostgreSQL.")
 
 
 # ─────────────────────────────────────────────
