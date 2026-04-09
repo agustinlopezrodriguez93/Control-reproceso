@@ -274,14 +274,41 @@ async def api_performance(maestro=Depends(require_maestro)):
 
 @router.get("/dashboard/kpis")
 async def api_dashboard_kpis(maestro=Depends(require_maestro)):
-    """KPIs globales para el dashboard. Solo Maestro."""
-    import logging
-    _log = logging.getLogger("reproceso.kpis")
-    try:
-        return await get_dashboard_stats()
-    except Exception as e:
-        _log.error(f"[dashboard/kpis] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    """KPIs globales para el dashboard. Solo Maestro.
+    Queries secuenciales — asyncpg no soporta gather sobre la misma conexión."""
+    from db import get_conn
+    async with get_conn() as conn:
+        counts = await conn.fetchrow("""
+            SELECT
+                COUNT(*) AS total_tasks,
+                COUNT(CASE WHEN estado = 'INICIADO' THEN 1 END) AS active_tasks,
+                COUNT(CASE WHEN estado = 'FINALIZADO' AND finished_at >= CURRENT_DATE THEN 1 END) AS finished_today,
+                COUNT(CASE WHEN es_urgente = TRUE AND estado != 'FINALIZADO' THEN 1 END) AS pending_urgent
+            FROM reproceso_procesos
+        """)
+        global_avg = await conn.fetchval("""
+            WITH pause_totals AS (
+                SELECT proceso_id,
+                       SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
+                FROM reproceso_pausas GROUP BY proceso_id
+            )
+            SELECT AVG(
+                EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60
+                - COALESCE(pt.total_pause_min, 0)
+            )
+            FROM reproceso_procesos p
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE p.estado = 'FINALIZADO'
+        """)
+        sku_rows = await conn.fetch("""
+            SELECT sku_destino, COUNT(*) AS count
+            FROM reproceso_procesos
+            GROUP BY sku_destino ORDER BY count DESC LIMIT 5
+        """)
+    stats = dict(counts)
+    stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
+    stats["sku_distribution"] = [dict(r) for r in sku_rows]
+    return stats
 
 
 @router.get("/dashboard/operator/{user_id}")
