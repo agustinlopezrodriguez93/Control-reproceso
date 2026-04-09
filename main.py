@@ -54,6 +54,11 @@ async def home(request: Request):
     """Main page - serves the SPA shell."""
     return templates.TemplateResponse(request=request, name="index.html")
 
+@app.get("/inventory", response_class=HTMLResponse)
+async def inventory(request: Request):
+    """Inventory page - Laudus ERP stock view."""
+    return templates.TemplateResponse(request=request, name="inventory.html")
+
 # 2. Main Flow Orderly (Requisito 9) y Entrypoint (Requisito 1)
 def main():
     try:

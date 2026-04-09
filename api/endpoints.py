@@ -398,3 +398,72 @@ async def api_set_break_config(req: BreakConfigRequest, maestro=Depends(require_
         f"enabled={req.enabled}, work={req.work_minutes}min, rest={req.rest_minutes}min"
     )
     return result
+
+
+# ─── Inventario Laudus (Maestro Only) ─────────
+
+# Caché en memoria: evita llamar a Laudus en cada request (TTL 5 minutos)
+import time as _time_inv
+_inventory_cache: dict = {"data": None, "ts": 0.0}
+_INVENTORY_TTL = 300  # 5 minutos
+
+
+@router.get("/inventory/stock")
+async def api_inventory_stock(maestro=Depends(require_maestro)):
+    """
+    Obtiene el inventario actualizado desde Laudus.
+    Cruza /production/products/list (metadata) con /production/products/stock (cantidades).
+    Cacheado 5 minutos para no saturar la API externa.
+    """
+    import logging
+    _log = logging.getLogger("reproceso.inventory")
+
+    now = _time_inv.monotonic()
+    if _inventory_cache["data"] is not None and now - _inventory_cache["ts"] < _INVENTORY_TTL:
+        return {"products": _inventory_cache["data"], "cached": True}
+
+    from laudus_client import LaudusClient
+    client = LaudusClient()
+
+    try:
+        # Llamada 1: metadata de productos
+        products_raw = await client.post(
+            "/production/products/list",
+            {"fields": ["productId", "sku", "description"]}
+        )
+        if not isinstance(products_raw, list):
+            raise ValueError(f"Respuesta inesperada de products/list: {type(products_raw)}")
+
+        # Llamada 2: stock por bodega
+        stock_raw = await client.get("/production/products/stock")
+        stock_map: dict = {}
+        if isinstance(stock_raw, dict) and "products" in stock_raw:
+            for item in stock_raw["products"]:
+                pid = item.get("productId")
+                if pid is not None:
+                    stock_map[pid] = item.get("stock", 0)
+        elif isinstance(stock_raw, list):
+            for item in stock_raw:
+                pid = item.get("productId")
+                if pid is not None:
+                    stock_map[pid] = item.get("stock", 0)
+
+        # Cruzar datos
+        merged = []
+        for prod in products_raw:
+            pid = prod.get("productId")
+            merged.append({
+                "productId": pid,
+                "sku": prod.get("sku", ""),
+                "description": prod.get("description", ""),
+                "stock": stock_map.get(pid, 0),
+            })
+
+        _inventory_cache["data"] = merged
+        _inventory_cache["ts"] = now
+        _log.info(f"[Laudus] Inventario actualizado: {len(merged)} productos.")
+        return {"products": merged, "cached": False}
+
+    except Exception as e:
+        _log.error(f"[Laudus] Error al obtener inventario: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Error al conectar con Laudus: {str(e)}")
