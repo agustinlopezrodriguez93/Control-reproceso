@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS stock_rules (
     updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS active_skus (
+    sku         TEXT PRIMARY KEY,
+    descripcion TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_procesos_operario  ON reproceso_procesos(operario_id);
 CREATE INDEX IF NOT EXISTS idx_procesos_estado    ON reproceso_procesos(estado);
 CREATE INDEX IF NOT EXISTS idx_pausas_proceso     ON reproceso_pausas(proceso_id);
@@ -257,15 +262,39 @@ _skus_cache: list[str] | None = None
 
 
 async def get_skus() -> list[str]:
-    """Retorna SKUs cacheados en memoria. Los SKUs son datos estáticos de configuración
-    y no cambian en runtime — el caché es permanente hasta reiniciar el servidor."""
+    """Retorna SKUs activos (active_skus). Cacheados en memoria — se invalida con invalidate_skus_cache()."""
     global _skus_cache
     if _skus_cache is None:
         async with get_conn() as conn:
-            rows = await conn.fetch("SELECT codigo FROM reproceso_skus ORDER BY codigo")
-            _skus_cache = [r["codigo"] for r in rows]
-        logger.info(f"[DB] SKUs cacheados en memoria ({len(_skus_cache)} items).")
+            rows = await conn.fetch("SELECT sku FROM active_skus ORDER BY sku")
+            _skus_cache = [r["sku"] for r in rows]
+        logger.info(f"[DB] SKUs activos cacheados ({len(_skus_cache)} items).")
     return _skus_cache
+
+
+def invalidate_skus_cache():
+    global _skus_cache
+    _skus_cache = None
+
+
+async def get_active_skus_full() -> list[dict]:
+    """Retorna SKUs activos con descripción."""
+    async with get_conn() as conn:
+        rows = await conn.fetch("SELECT sku, descripcion FROM active_skus ORDER BY sku")
+    return [dict(r) for r in rows]
+
+
+async def set_active_skus(skus: list[dict]):
+    """Reemplaza la lista completa de SKUs activos. Cada item: {sku, descripcion}."""
+    async with get_conn() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM active_skus")
+            if skus:
+                await conn.executemany(
+                    "INSERT INTO active_skus (sku, descripcion) VALUES ($1, $2)",
+                    [(s["sku"].upper(), s.get("descripcion", "")) for s in skus]
+                )
+    invalidate_skus_cache()
 
 
 async def _attach_pausas_batch(conn: asyncpg.Connection, procesos: list[dict]) -> list[dict]:

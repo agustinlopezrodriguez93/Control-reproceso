@@ -106,6 +106,8 @@ const UI = {
             ViewInventory.render();
         } else if (viewId === 'view-stock-rules') {
             ViewStockRules.render();
+        } else if (viewId === 'view-active-skus') {
+            ViewActiveSkus.render();
         }
     },
 
@@ -500,6 +502,9 @@ const UI = {
 
         const btnStockRules = document.getElementById('btn-view-stock-rules');
         if (btnStockRules) btnStockRules.onclick = () => UI.navigateTo('view-stock-rules');
+
+        const btnActiveSkus = document.getElementById('btn-view-active-skus');
+        if (btnActiveSkus) btnActiveSkus.onclick = () => UI.navigateTo('view-active-skus');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 

@@ -16,7 +16,8 @@ from db import (
     get_performance, get_usuario_por_nombre, get_usuario_por_id,
     crear_usuario, borrar_usuario, get_audit_logs, log_audit,
     get_dashboard_stats, get_operator_kpis, get_sku_human_resources,
-    get_break_config, set_break_config, get_conn
+    get_break_config, set_break_config, get_conn,
+    get_active_skus_full, set_active_skus
 )
 from auth import (
     verify_password, verify_password_async, create_access_token,
@@ -536,3 +537,43 @@ async def delete_stock_rule(rule_id: int, maestro=Depends(require_maestro)):
         result = await conn.execute("DELETE FROM stock_rules WHERE id=$1", rule_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Regla no encontrada")
+
+
+# ─── Active SKUs ──────────────────────────────
+
+class ActiveSkusIn(BaseModel):
+    skus: list[dict]   # [{sku, descripcion}, ...]
+
+
+@router.get("/active-skus")
+async def api_get_active_skus(maestro=Depends(require_maestro)):
+    items = await get_active_skus_full()
+    return {"skus": items}
+
+
+@router.post("/active-skus")
+async def api_set_active_skus(body: ActiveSkusIn, maestro=Depends(require_maestro)):
+    """Reemplaza la lista completa de SKUs activos."""
+    await set_active_skus(body.skus)
+    return {"saved": len(body.skus)}
+
+
+@router.get("/laudus/products")
+async def api_laudus_products(maestro=Depends(require_maestro)):
+    """Devuelve todos los productos de Laudus (productId, sku, description) — para el selector."""
+    from laudus_client import LaudusClient
+    client = LaudusClient()
+    try:
+        products_raw = await client.post(
+            "/production/products/list",
+            {"fields": ["productId", "sku", "description"]}
+        )
+        if isinstance(products_raw, dict) and "products" in products_raw:
+            products_raw = products_raw["products"]
+        products = [
+            {"sku": p.get("sku", ""), "descripcion": p.get("description", "")}
+            for p in products_raw if p.get("sku")
+        ]
+        return {"products": products}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error al conectar con Laudus: {str(e)}")

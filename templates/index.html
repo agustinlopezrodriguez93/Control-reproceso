@@ -167,6 +167,12 @@
                         </svg>
                         Reglas de Stock
                     </button>
+                    <button id="btn-view-active-skus" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                        </svg>
+                        Productos Activos
+                    </button>
                     <button id="btn-new-process" class="btn btn-primary">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
@@ -579,6 +585,51 @@
     <div id="snackbar-container"></div>
 
     <!-- Modal Template -->
+    <!-- View: Productos Activos (Maestro Only) -->
+    <section id="view-active-skus" class="view hidden">
+        <div class="view-header">
+            <div class="header-left-nav">
+                <button class="btn btn-ghost btn-sm btn-back" onclick="UI.navigateTo('view-dashboard')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <h1>Productos Activos</h1>
+            </div>
+            <div class="header-actions">
+                <span id="active-skus-count" style="color:var(--text-muted);font-size:.9rem;align-self:center;">0 seleccionados</span>
+                <button id="btn-save-active-skus" class="btn btn-primary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    Guardar selección
+                </button>
+            </div>
+        </div>
+
+        <p style="color:var(--text-muted);margin-bottom:1rem;font-size:.9rem;">
+            Selecciona los productos con los que trabaja el sistema. Solo estos aparecerán en procesos, inventario y reglas de stock.
+        </p>
+
+        <!-- Buscador -->
+        <div class="card" style="padding:.75rem 1rem;margin-bottom:1rem;">
+            <div class="search-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+                <input type="text" id="active-skus-search" placeholder="Buscar por SKU o descripción..." autocomplete="off"
+                    style="border:none;background:transparent;outline:none;width:100%;font-size:.9rem;">
+            </div>
+        </div>
+
+        <!-- Lista de productos -->
+        <div class="card" style="padding:0;">
+            <div id="active-skus-list" style="max-height:60vh;overflow-y:auto;">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </section>
+
     <!-- View: Reglas de Stock (Maestro Only) -->
     <section id="view-stock-rules" class="view hidden">
         <div class="view-header">
@@ -736,15 +787,16 @@
     <script src="/static/js/api.js?v=8"></script>
     <script src="/static/js/store.js?v=8"></script>
     <!-- Módulos de vistas — deben cargarse antes de ui.js para que UI pueda delegar en ellos -->
-    <script src="/static/js/views/dashboard.js?v=10"></script>
-    <script src="/static/js/views/detail.js?v=10"></script>
-    <script src="/static/js/views/performance.js?v=10"></script>
-    <script src="/static/js/views/users.js?v=10"></script>
-    <script src="/static/js/views/inventory.js?v=10"></script>
-    <script src="/static/js/views/stock-rules.js?v=10"></script>
-    <script src="/static/js/ui.js?v=10"></script>
-    <script src="/static/js/break-monitor.js?v=10"></script>
-    <script src="/static/js/app.js?v=10"></script>
+    <script src="/static/js/views/dashboard.js?v=11"></script>
+    <script src="/static/js/views/detail.js?v=11"></script>
+    <script src="/static/js/views/performance.js?v=11"></script>
+    <script src="/static/js/views/users.js?v=11"></script>
+    <script src="/static/js/views/inventory.js?v=11"></script>
+    <script src="/static/js/views/stock-rules.js?v=11"></script>
+    <script src="/static/js/views/active-skus.js?v=11"></script>
+    <script src="/static/js/ui.js?v=11"></script>
+    <script src="/static/js/break-monitor.js?v=11"></script>
+    <script src="/static/js/app.js?v=11"></script>
 </body>
 
 </html>

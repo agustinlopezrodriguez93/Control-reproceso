@@ -81,14 +81,21 @@ const ViewInventory = (() => {
         if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
 
         try {
-            // Traer reglas y stock en paralelo
-            const [stockData, rulesData] = await Promise.all([
+            // Traer stock, reglas y SKUs activos en paralelo
+            const [stockData, rulesData, activeData] = await Promise.all([
                 API.get('/api/inventory/stock'),
-                API.get('/api/stock-rules').catch(() => ({ rules: [] }))
+                API.get('/api/stock-rules').catch(() => ({ rules: [] })),
+                API.get('/api/active-skus').catch(() => ({ skus: [] }))
             ]);
             _rulesMap = {};
             (rulesData.rules || []).forEach(r => { _rulesMap[r.sku.toUpperCase()] = r; });
-            _allProducts = stockData.products || [];
+
+            // Filtrar solo SKUs activos (si hay activos configurados)
+            const activeSkus = new Set((activeData.skus || []).map(s => s.sku.toUpperCase()));
+            const allProducts = stockData.products || [];
+            _allProducts = activeSkus.size > 0
+                ? allProducts.filter(p => activeSkus.has((p.sku || '').toUpperCase()))
+                : allProducts;
             _render(_allProducts);
             _updateStats(_allProducts);
 
