@@ -1,13 +1,14 @@
 """
-Control Reproceso - Database Layer
-Mismo patrón que el consolidador: PostgreSQL via psycopg2
+Control Reproceso - Database Layer (asyncpg)
+Pool async — no bloquea el event loop de FastAPI.
+Parámetros: $1, $2, ... (sintaxis asyncpg, no %s)
 """
+import asyncpg
+import ssl as _ssl
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
-
 import logging
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -17,688 +18,531 @@ if not DATABASE_URL:
 
 logger = logging.getLogger("reproceso.db")
 
+# ─── SSL Context ─────────────────────────────
+# Replica el comportamiento de sslmode='require' de psycopg2:
+# exige cifrado pero no verifica el certificado del servidor.
+# Para producción con CA válida, reemplazar por ssl=True.
+_ssl_ctx = _ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = _ssl.CERT_NONE
 
-def get_db():
-    """Returns a new PostgreSQL connection with RealDictCursor."""
-    if not DATABASE_URL:
-        raise ConnectionError("DATABASE_URL is not set in environment or .env file")
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-    return conn
+# ─── Connection Pool ──────────────────────────
+_pool: asyncpg.Pool | None = None
 
 
+async def _get_pool() -> asyncpg.Pool:
+    """Lazy-init del pool de conexiones async."""
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=2,
+            max_size=10,
+            ssl=_ssl_ctx,
+        )
+        logger.info("[DB] asyncpg pool creado (min=2, max=10)")
+    return _pool
+
+
+@asynccontextmanager
+async def get_conn():
+    """Obtiene una conexión del pool y la libera al salir."""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        yield conn
+
+
+# ─── Schema + Índices ────────────────────────
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS reproceso_usuarios (
-    id       SERIAL PRIMARY KEY,
-    nombre   TEXT NOT NULL UNIQUE,
-    rol      TEXT NOT NULL DEFAULT 'Operario',
-    avatar   TEXT DEFAULT '',
+    id            SERIAL PRIMARY KEY,
+    nombre        TEXT NOT NULL UNIQUE,
+    rol           TEXT NOT NULL DEFAULT 'Operario',
+    avatar        TEXT DEFAULT '',
     password_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reproceso_audit_logs (
-    id          SERIAL PRIMARY KEY,
-    timestamp   TIMESTAMPTZ DEFAULT NOW(),
-    usuario_id  INTEGER REFERENCES reproceso_usuarios(id),
-    accion      TEXT NOT NULL,
-    detalles    TEXT
+    id         SERIAL PRIMARY KEY,
+    timestamp  TIMESTAMPTZ DEFAULT NOW(),
+    usuario_id INTEGER REFERENCES reproceso_usuarios(id),
+    accion     TEXT NOT NULL,
+    detalles   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reproceso_skus (
-    id       SERIAL PRIMARY KEY,
-    codigo   TEXT NOT NULL UNIQUE
+    id     SERIAL PRIMARY KEY,
+    codigo TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS reproceso_procesos (
-    id              TEXT PRIMARY KEY,
-    operario_id     INTEGER REFERENCES reproceso_usuarios(id),
-    sku_destino     TEXT NOT NULL,
-    estado          TEXT NOT NULL DEFAULT 'CREADO',
-    es_urgente      BOOLEAN DEFAULT FALSE,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    started_at      TIMESTAMPTZ,
-    finished_at     TIMESTAMPTZ,
+    id                TEXT PRIMARY KEY,
+    operario_id       INTEGER REFERENCES reproceso_usuarios(id),
+    sku_destino       TEXT NOT NULL,
+    estado            TEXT NOT NULL DEFAULT 'CREADO',
+    es_urgente        BOOLEAN DEFAULT FALSE,
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    started_at        TIMESTAMPTZ,
+    finished_at       TIMESTAMPTZ,
     last_state_change TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS reproceso_pausas (
-    id          SERIAL PRIMARY KEY,
-    proceso_id  TEXT REFERENCES reproceso_procesos(id) ON DELETE CASCADE,
-    inicio      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    fin         TIMESTAMPTZ
+    id         SERIAL PRIMARY KEY,
+    proceso_id TEXT REFERENCES reproceso_procesos(id) ON DELETE CASCADE,
+    inicio     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    fin        TIMESTAMPTZ
 );
+
+CREATE INDEX IF NOT EXISTS idx_procesos_operario  ON reproceso_procesos(operario_id);
+CREATE INDEX IF NOT EXISTS idx_procesos_estado    ON reproceso_procesos(estado);
+CREATE INDEX IF NOT EXISTS idx_pausas_proceso     ON reproceso_pausas(proceso_id);
+CREATE INDEX IF NOT EXISTS idx_audit_timestamp    ON reproceso_audit_logs(timestamp DESC);
 """
 
 
-def init_db():
-    """Create tables if they don't exist and seed initial data."""
-    conn = get_db()
-    try:
-        cur = conn.cursor()
-        cur.execute(SCHEMA)
+async def init_db():
+    """Crea tablas, índices y datos iniciales si no existen."""
+    from auth import get_password_hash
 
-        # Check if migration needed (add password_hash if not exists)
-        cur.execute("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name='reproceso_usuarios' AND column_name='password_hash'
+    async with get_conn() as conn:
+        # DDL: tablas e índices (múltiples sentencias, sin parámetros)
+        await conn.execute(SCHEMA)
+
+        # Migración: agregar password_hash si no existe (bases de datos antiguas)
+        col_exists = await conn.fetchval("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'reproceso_usuarios' AND column_name = 'password_hash'
         """)
-        if not cur.fetchone():
-            logger.info("[DB] Migración: Añadiendo columna password_hash...")
-            cur.execute("ALTER TABLE reproceso_usuarios ADD COLUMN password_hash TEXT")
+        if not col_exists:
+            logger.info("[DB] Migración: añadiendo columna password_hash...")
+            await conn.execute("ALTER TABLE reproceso_usuarios ADD COLUMN password_hash TEXT")
 
-        conn.commit()
-
-        # Seed default users
-        # Import here to avoid circular dependency
-        from auth import get_password_hash
-
-        # Seed default users if empty
-        cur.execute("SELECT COUNT(*) FROM reproceso_usuarios")
-        count = cur.fetchone()[0]
-
-        if count == 0:
-            # Usuarios por defecto: Admin/mega123, OperariosN/1234,
-            # admin/admin123 (rol Maestro), viewer/viewer123 (rol Operario)
+        # Seed usuarios
+        user_count = await conn.fetchval("SELECT COUNT(*) FROM reproceso_usuarios")
+        if user_count == 0:
             users = [
-                # (nombre, rol, avatar, password)
-                ("Admin",      "Maestro",  "AD", "mega123"),
-                ("Usuario 1",  "Operario", "U1", "1234"),
-                ("Usuario 2",  "Operario", "U2", "1234"),
-                ("Usuario 3",  "Operario", "U3", "1234"),
-                ("admin",      "Maestro",  "AD", "admin123"),
-                ("viewer",     "Operario", "VW", "viewer123"),
+                ("Admin",     "Maestro",  "AD", "mega123"),
+                ("Usuario 1", "Operario", "U1", "1234"),
+                ("Usuario 2", "Operario", "U2", "1234"),
+                ("Usuario 3", "Operario", "U3", "1234"),
             ]
-            for nombre, rol, avatar, pw in users:
-                cur.execute(
-                    "INSERT INTO reproceso_usuarios (nombre, rol, avatar, password_hash) "
-                    "VALUES (%s, %s, %s, %s) ON CONFLICT (nombre) DO NOTHING",
-                    (nombre, rol, avatar, get_password_hash(pw))
-                )
-            conn.commit()
-            logger.info("[DB] Usuarios por defecto creados (admin/admin123, viewer/viewer123, Admin/mega123).")
-        else:
-            # Asegurar que los usuarios admin/viewer existen aunque la tabla ya tenga datos
-            for nombre, rol, avatar, pw in [
-                ("admin",  "Maestro",  "AD", "admin123"),
-                ("viewer", "Operario", "VW", "viewer123"),
-            ]:
-                cur.execute(
-                    "INSERT INTO reproceso_usuarios (nombre, rol, avatar, password_hash) "
-                    "VALUES (%s, %s, %s, %s) ON CONFLICT (nombre) DO NOTHING",
-                    (nombre, rol, avatar, get_password_hash(pw))
-                )
-            conn.commit()
-            logger.info("[DB] Usuarios admin/viewer verificados.")
+            async with conn.transaction():
+                for nombre, rol, avatar, pw in users:
+                    await conn.execute(
+                        "INSERT INTO reproceso_usuarios (nombre, rol, avatar, password_hash) "
+                        "VALUES ($1, $2, $3, $4) ON CONFLICT (nombre) DO NOTHING",
+                        nombre, rol, avatar, get_password_hash(pw)
+                    )
+            logger.info("[DB] Usuarios por defecto creados.")
 
-        # Seed default SKUs if empty
-        cur.execute("SELECT COUNT(*) FROM reproceso_skus")
-        count = cur.fetchone()[0]
-        if count == 0:
+        # Seed SKUs
+        sku_count = await conn.fetchval("SELECT COUNT(*) FROM reproceso_skus")
+        if sku_count == 0:
             skus = [
                 "GCMD", "GGAL070", "IMOCA", "IMOCP", "MCCE",
                 "SCCA", "SECC090", "SECPI", "SEKOF", "SEKQB",
                 "SEKRN", "SEPASP", "SEPC", "SEPEIC", "SEPOD",
-                "SEPOF", "SESCD", "SGEP", "SKPXL"
+                "SEPOF", "SESCD", "SGEP", "SKPXL",
             ]
-            for sku in skus:
-                cur.execute(
-                    "INSERT INTO reproceso_skus (codigo) VALUES (%s) ON CONFLICT (codigo) DO NOTHING",
-                    (sku,)
-                )
-            conn.commit()
+            async with conn.transaction():
+                for sku in skus:
+                    await conn.execute(
+                        "INSERT INTO reproceso_skus (codigo) VALUES ($1) ON CONFLICT (codigo) DO NOTHING",
+                        sku
+                    )
             logger.info("[DB] SKUs por defecto creados.")
 
-        cur.close()
-    finally:
-        conn.close()
-    logger.info("[DB] Control Reproceso DB initialized on PostgreSQL.")
+    logger.info("[DB] Control Reproceso DB inicializada en PostgreSQL (asyncpg).")
 
 
 # ─────────────────────────────────────────────
-# Query functions
+# Query functions — todas async, usan el pool
 # ─────────────────────────────────────────────
 
-def get_usuarios():
-    """
-    Retorna la lista completa de usuarios registrados en el sistema.
-
-    Returns:
-        Lista de dicts con campos: id, nombre, rol, avatar.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT id, nombre, rol, avatar FROM reproceso_usuarios ORDER BY id")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [dict(r) for r in rows]
+async def get_usuarios() -> list[dict]:
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            "SELECT id, nombre, rol, avatar FROM reproceso_usuarios ORDER BY id"
+        )
+        return [dict(r) for r in rows]
 
 
-def get_usuario_por_nombre(nombre):
-    """
-    Busca un usuario por su nombre exacto, incluyendo el campo password_hash.
-
-    Args:
-        nombre: Nombre de usuario a buscar.
-
-    Returns:
-        Dict con todos los campos del usuario, o None si no existe.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM reproceso_usuarios WHERE nombre = %s", (nombre,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return dict(row) if row else None
+async def get_usuario_por_nombre(nombre: str) -> dict | None:
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, nombre, rol, avatar, password_hash FROM reproceso_usuarios WHERE nombre = $1",
+            nombre
+        )
+        return dict(row) if row else None
 
 
-def crear_usuario(nombre, password, rol, avatar=""):
-    """
-    Crea un nuevo usuario con la contrasena hasheada en bcrypt.
+async def get_usuario_por_id(user_id: int) -> dict | None:
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, nombre, rol, avatar FROM reproceso_usuarios WHERE id = $1",
+            user_id
+        )
+        return dict(row) if row else None
 
-    Args:
-        nombre: Nombre unico del usuario.
-        password: Contrasena en texto plano (se hashea antes de guardar).
-        rol: Rol del usuario ('Operario' o 'Maestro').
-        avatar: Texto corto para el avatar visual (ej. 'U1', 'S'). Por defecto vacio.
 
-    Returns:
-        ID entero del usuario recien creado.
-    """
+async def crear_usuario(nombre: str, password: str, rol: str, avatar: str = "") -> int:
     from auth import get_password_hash
-    conn = get_db()
-    cur = conn.cursor()
     pw_hash = get_password_hash(password)
-    cur.execute(
-        "INSERT INTO reproceso_usuarios (nombre, rol, avatar, password_hash) VALUES (%s, %s, %s, %s) RETURNING id",
-        (nombre, rol, avatar, pw_hash)
-    )
-    new_id = cur.fetchone()[0]
-    conn.commit()
-    cur.close()
-    conn.close()
-    return new_id
+    async with get_conn() as conn:
+        new_id = await conn.fetchval(
+            "INSERT INTO reproceso_usuarios (nombre, rol, avatar, password_hash) "
+            "VALUES ($1, $2, $3, $4) RETURNING id",
+            nombre, rol, avatar, pw_hash
+        )
+        return new_id
 
 
-def borrar_usuario(user_id):
-    """
-    Elimina un usuario de la base de datos por su ID.
-
-    Args:
-        user_id: ID entero del usuario a eliminar.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM reproceso_usuarios WHERE id = %s", (user_id,))
-    conn.commit()
-    cur.close()
-    conn.close()
+async def borrar_usuario(user_id: int) -> None:
+    async with get_conn() as conn:
+        await conn.execute(
+            "DELETE FROM reproceso_usuarios WHERE id = $1", user_id
+        )
 
 
-def log_audit(username, accion, detalles=""):
-    """
-    Inserta una entrada en el registro de auditoria.
-
-    Args:
-        username: Nombre del usuario que realizo la accion.
-        accion: Codigo de accion en mayusculas (ej. 'LOGIN', 'PROCESO_CREADO').
-        detalles: Informacion adicional de contexto. Por defecto cadena vacia.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    # Get user id from name
-    cur.execute("SELECT id FROM reproceso_usuarios WHERE nombre = %s", (username,))
-    row = cur.fetchone()
-    user_id = row[0] if row else None
-    
-    cur.execute(
-        "INSERT INTO reproceso_audit_logs (usuario_id, accion, detalles) VALUES (%s, %s, %s)",
-        (user_id, accion, detalles)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+async def log_audit(username: str, accion: str, detalles: str = "") -> None:
+    """Registra una acción de auditoría en un solo roundtrip (INSERT + subselect)."""
+    async with get_conn() as conn:
+        await conn.execute("""
+            INSERT INTO reproceso_audit_logs (usuario_id, accion, detalles)
+            SELECT id, $1, $2 FROM reproceso_usuarios WHERE nombre = $3
+        """, accion, detalles, username)
 
 
-def get_audit_logs(limit=100):
-    """
-    Retorna las entradas mas recientes del registro de auditoria.
-
-    Args:
-        limit: Cantidad maxima de registros a retornar. Por defecto 100.
-
-    Returns:
-        Lista de dicts con campos: id, timestamp, accion, detalles, usuario_id, username.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-        SELECT a.*, u.nombre as username
-        FROM reproceso_audit_logs a
-        LEFT JOIN reproceso_usuarios u ON u.id = a.usuario_id
-        ORDER BY a.timestamp DESC
-        LIMIT %s
-    """, (limit,))
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [dict(r) for r in rows]
+async def get_audit_logs(limit: int = 100) -> list[dict]:
+    async with get_conn() as conn:
+        rows = await conn.fetch("""
+            SELECT a.*, u.nombre as username
+            FROM reproceso_audit_logs a
+            LEFT JOIN reproceso_usuarios u ON u.id = a.usuario_id
+            ORDER BY a.timestamp DESC
+            LIMIT $1
+        """, limit)
+        return [dict(r) for r in rows]
 
 
-def get_skus():
-    """
-    Retorna la lista de codigos SKU disponibles en el catalogo, ordenados alfabeticamente.
-
-    Returns:
-        Lista de strings con los codigos de SKU.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT codigo FROM reproceso_skus ORDER BY codigo")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [r["codigo"] for r in rows]
+async def get_skus() -> list[str]:
+    async with get_conn() as conn:
+        rows = await conn.fetch("SELECT codigo FROM reproceso_skus ORDER BY codigo")
+        return [r["codigo"] for r in rows]
 
 
-def get_procesos(operario_nombre=None):
-    """
-    Retorna la lista de procesos de reproceso, con su historial de pausas incluido.
+async def _attach_pausas_batch(conn: asyncpg.Connection, procesos: list[dict]) -> list[dict]:
+    """Carga todas las pausas en una sola query y las adjunta a sus procesos (evita N+1)."""
+    if not procesos:
+        return procesos
 
-    Si se proporciona 'operario_nombre', filtra solo los procesos asignados a ese operario.
-    Los procesos urgentes aparecen primero; dentro del mismo nivel de urgencia,
-    se ordenan por fecha de creacion descendente.
+    proc_ids = [p["id"] for p in procesos]
+    rows = await conn.fetch("""
+        SELECT proceso_id, inicio, fin
+        FROM reproceso_pausas
+        WHERE proceso_id = ANY($1::text[])
+        ORDER BY inicio
+    """, proc_ids)
 
-    Args:
-        operario_nombre: Nombre exacto del operario a filtrar. Si es None, retorna todos.
+    pausas_map: dict[str, list] = {}
+    for r in rows:
+        pid = r["proceso_id"]
+        pausas_map.setdefault(pid, []).append({"inicio": r["inicio"], "fin": r["fin"]})
 
-    Returns:
-        Lista de dicts. Cada dict incluye todos los campos de 'reproceso_procesos',
-        el campo 'operario_nombre' (nombre del usuario), y una clave 'pausas' con
-        la lista de registros de pausa (cada uno con 'inicio' y 'fin').
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    for proc in procesos:
+        proc["pausas"] = pausas_map.get(proc["id"], [])
 
-    if operario_nombre:
-        cur.execute("""
+    return procesos
+
+
+async def get_procesos(operario_nombre: str | None = None) -> list[dict]:
+    """Retorna procesos con pausas. Usa batch loading (2 queries totales)."""
+    async with get_conn() as conn:
+        if operario_nombre:
+            rows = await conn.fetch("""
+                SELECT p.*, u.nombre as operario_nombre
+                FROM reproceso_procesos p
+                JOIN reproceso_usuarios u ON u.id = p.operario_id
+                WHERE u.nombre = $1
+                ORDER BY p.es_urgente DESC, p.created_at DESC
+            """, operario_nombre)
+        else:
+            rows = await conn.fetch("""
+                SELECT p.*, u.nombre as operario_nombre
+                FROM reproceso_procesos p
+                JOIN reproceso_usuarios u ON u.id = p.operario_id
+                ORDER BY p.es_urgente DESC, p.created_at DESC
+            """)
+
+        procesos = [dict(r) for r in rows]
+        await _attach_pausas_batch(conn, procesos)
+        return procesos
+
+
+async def get_proceso(proceso_id: str) -> dict | None:
+    """Retorna un proceso con sus pausas (2 queries en 1 conexión)."""
+    async with get_conn() as conn:
+        row = await conn.fetchrow("""
             SELECT p.*, u.nombre as operario_nombre
             FROM reproceso_procesos p
             JOIN reproceso_usuarios u ON u.id = p.operario_id
-            WHERE u.nombre = %s
-            ORDER BY p.es_urgente DESC, p.created_at DESC
-        """, (operario_nombre,))
-    else:
-        cur.execute("""
+            WHERE p.id = $1
+        """, proceso_id)
+
+        if not row:
+            return None
+
+        proc = dict(row)
+        pausas = await conn.fetch(
+            "SELECT inicio, fin FROM reproceso_pausas WHERE proceso_id = $1 ORDER BY inicio",
+            proceso_id
+        )
+        proc["pausas"] = [dict(p) for p in pausas]
+        return proc
+
+
+async def crear_proceso(
+    proceso_id: str, operario_nombre: str, sku_destino: str, es_urgente: bool = False
+) -> dict:
+    """Crea un proceso y retorna el dict completo (sin segunda query)."""
+    async with get_conn() as conn:
+        user_id = await conn.fetchval(
+            "SELECT id FROM reproceso_usuarios WHERE nombre = $1", operario_nombre
+        )
+        if not user_id:
+            raise ValueError(f"Operario '{operario_nombre}' no encontrado")
+
+        row = await conn.fetchrow("""
+            INSERT INTO reproceso_procesos (id, operario_id, sku_destino, estado, es_urgente)
+            VALUES ($1, $2, $3, 'CREADO', $4)
+            RETURNING id, operario_id, sku_destino, estado, es_urgente,
+                      created_at, started_at, finished_at, last_state_change
+        """, proceso_id, user_id, sku_destino, es_urgente)
+
+        result = dict(row)
+        result["operario_nombre"] = operario_nombre
+        result["pausas"] = []
+        return result
+
+
+async def actualizar_estado(proceso_id: str, nueva_accion: str) -> dict:
+    """Actualiza estado y retorna el proceso completo — todo en una sola conexión."""
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            "SELECT estado FROM reproceso_procesos WHERE id = $1", proceso_id
+        )
+        if not row:
+            raise ValueError("Proceso no encontrado")
+
+        estado_actual = row["estado"]
+
+        # Validar la transición antes de entrar en la transacción
+        if nueva_accion == "start" and estado_actual != "CREADO":
+            raise ValueError("Solo procesos CREADOS pueden iniciarse")
+        elif nueva_accion == "pause" and estado_actual != "INICIADO":
+            raise ValueError("Solo procesos INICIADOS pueden pausarse")
+        elif nueva_accion == "resume" and estado_actual != "PAUSADO":
+            raise ValueError("Solo procesos PAUSADOS pueden reanudarse")
+        elif nueva_accion == "finish" and estado_actual == "FINALIZADO":
+            raise ValueError("Proceso ya finalizado")
+        elif nueva_accion not in ("start", "pause", "resume", "finish"):
+            raise ValueError(f"Acción desconocida: {nueva_accion}")
+
+        async with conn.transaction():
+            if nueva_accion == "start":
+                await conn.execute("""
+                    UPDATE reproceso_procesos
+                    SET estado = 'INICIADO', started_at = NOW(), last_state_change = NOW()
+                    WHERE id = $1
+                """, proceso_id)
+
+            elif nueva_accion == "pause":
+                await conn.execute("""
+                    UPDATE reproceso_procesos
+                    SET estado = 'PAUSADO', last_state_change = NOW()
+                    WHERE id = $1
+                """, proceso_id)
+                await conn.execute(
+                    "INSERT INTO reproceso_pausas (proceso_id, inicio) VALUES ($1, NOW())",
+                    proceso_id
+                )
+
+            elif nueva_accion == "resume":
+                await conn.execute("""
+                    UPDATE reproceso_procesos
+                    SET estado = 'INICIADO', last_state_change = NOW()
+                    WHERE id = $1
+                """, proceso_id)
+                await conn.execute("""
+                    UPDATE reproceso_pausas SET fin = NOW()
+                    WHERE proceso_id = $1 AND fin IS NULL
+                """, proceso_id)
+
+            elif nueva_accion == "finish":
+                if estado_actual == "PAUSADO":
+                    await conn.execute("""
+                        UPDATE reproceso_pausas SET fin = NOW()
+                        WHERE proceso_id = $1 AND fin IS NULL
+                    """, proceso_id)
+                await conn.execute("""
+                    UPDATE reproceso_procesos
+                    SET estado = 'FINALIZADO', finished_at = NOW(), last_state_change = NOW()
+                    WHERE id = $1
+                """, proceso_id)
+
+        # Leer el proceso actualizado en la misma conexión (sin segundo round-trip TCP)
+        updated = dict(await conn.fetchrow("""
             SELECT p.*, u.nombre as operario_nombre
             FROM reproceso_procesos p
             JOIN reproceso_usuarios u ON u.id = p.operario_id
-            ORDER BY p.es_urgente DESC, p.created_at DESC
+            WHERE p.id = $1
+        """, proceso_id))
+        pausas = await conn.fetch(
+            "SELECT inicio, fin FROM reproceso_pausas WHERE proceso_id = $1 ORDER BY inicio",
+            proceso_id
+        )
+        updated["pausas"] = [dict(p) for p in pausas]
+        return updated
+
+
+async def get_proceso_activo(operario_nombre: str) -> dict | None:
+    async with get_conn() as conn:
+        row = await conn.fetchrow("""
+            SELECT p.id, p.sku_destino
+            FROM reproceso_procesos p
+            JOIN reproceso_usuarios u ON u.id = p.operario_id
+            WHERE u.nombre = $1 AND p.estado = 'INICIADO'
+            LIMIT 1
+        """, operario_nombre)
+        return dict(row) if row else None
+
+
+async def get_performance() -> list[dict]:
+    async with get_conn() as conn:
+        # CTE pre-agrega pausas una sola vez (O(n+m) en lugar de O(n×m))
+        rows = await conn.fetch("""
+            WITH pause_totals AS (
+                SELECT proceso_id,
+                       SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
+                FROM reproceso_pausas
+                GROUP BY proceso_id
+            )
+            SELECT
+                u.id,
+                u.nombre AS user,
+                COUNT(CASE WHEN p.estado = 'FINALIZADO' THEN 1 END) AS completed,
+                COUNT(p.id) AS total,
+                AVG(CASE
+                    WHEN p.estado = 'FINALIZADO' THEN
+                        EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60
+                        - COALESCE(pt.total_pause_min, 0)
+                END) AS avg_minutes
+            FROM reproceso_usuarios u
+            LEFT JOIN reproceso_procesos p ON p.operario_id = u.id
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE u.rol = 'Operario'
+            GROUP BY u.id, u.nombre
+            ORDER BY u.nombre
+        """)
+        return [dict(r) for r in rows]
+
+
+async def get_dashboard_stats() -> dict:
+    async with get_conn() as conn:
+        # Las 3 consultas son independientes — se ejecutan en paralelo
+        import asyncio
+        counts_coro = conn.fetchrow("""
+            SELECT
+                COUNT(*) AS total_tasks,
+                COUNT(CASE WHEN estado = 'INICIADO' THEN 1 END) AS active_tasks,
+                COUNT(CASE WHEN estado = 'FINALIZADO' AND finished_at >= CURRENT_DATE THEN 1 END) AS finished_today,
+                COUNT(CASE WHEN es_urgente = TRUE AND estado != 'FINALIZADO' THEN 1 END) AS pending_urgent
+            FROM reproceso_procesos
+        """)
+        # CTE pre-agrega pausas para calcular promedio global sin subconsultas correlacionadas
+        avg_coro = conn.fetchval("""
+            WITH pause_totals AS (
+                SELECT proceso_id,
+                       SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
+                FROM reproceso_pausas
+                GROUP BY proceso_id
+            )
+            SELECT AVG(
+                EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60
+                - COALESCE(pt.total_pause_min, 0)
+            )
+            FROM reproceso_procesos p
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE p.estado = 'FINALIZADO'
+        """)
+        sku_coro = conn.fetch("""
+            SELECT sku_destino, COUNT(*) AS count
+            FROM reproceso_procesos
+            GROUP BY sku_destino
+            ORDER BY count DESC
+            LIMIT 5
         """)
 
-    rows = cur.fetchall()
+        counts, global_avg, sku_rows = await asyncio.gather(counts_coro, avg_coro, sku_coro)
 
-    # Attach pauses to each process
-    results = []
-    for row in rows:
-        proc = dict(row)
-        cur.execute(
-            "SELECT inicio, fin FROM reproceso_pausas WHERE proceso_id = %s ORDER BY inicio",
-            (proc["id"],)
-        )
-        proc["pausas"] = [dict(p) for p in cur.fetchall()]
-        results.append(proc)
-
-    cur.close()
-    conn.close()
-    return results
+        stats = dict(counts)
+        stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
+        stats["sku_distribution"] = [dict(r) for r in sku_rows]
+        return stats
 
 
-def get_proceso(proceso_id):
-    """
-    Retorna un proceso de reproceso por su ID, incluyendo su historial de pausas.
+async def get_operator_kpis(user_id: int) -> dict:
+    async with get_conn() as conn:
+        import asyncio
 
-    Args:
-        proceso_id: ID de texto (UUID) del proceso a buscar.
+        # CTE compartida: pre-agrega pausas para evitar subconsultas correlacionadas
+        _PAUSE_CTE = """
+            WITH pause_totals AS (
+                SELECT proceso_id,
+                       SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
+                FROM reproceso_pausas
+                GROUP BY proceso_id
+            )
+        """
 
-    Returns:
-        Dict con todos los campos del proceso, el nombre del operario y la lista
-        de pausas, o None si no existe ningun proceso con ese ID.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-        SELECT p.*, u.nombre as operario_nombre
-        FROM reproceso_procesos p
-        JOIN reproceso_usuarios u ON u.id = p.operario_id
-        WHERE p.id = %s
-    """, (proceso_id,))
-    row = cur.fetchone()
+        op_coro = conn.fetchrow(f"""
+            {_PAUSE_CTE}
+            SELECT
+                COUNT(*) AS total,
+                COUNT(CASE WHEN p.estado = 'FINALIZADO' THEN 1 END) AS finished,
+                AVG(CASE
+                    WHEN p.estado = 'FINALIZADO' THEN
+                        EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60
+                        - COALESCE(pt.total_pause_min, 0)
+                END) AS avg_minutes
+            FROM reproceso_procesos p
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE p.operario_id = $1
+        """, user_id)
 
-    if row:
-        proc = dict(row)
-        cur.execute(
-            "SELECT inicio, fin FROM reproceso_pausas WHERE proceso_id = %s ORDER BY inicio",
-            (proc["id"],)
-        )
-        proc["pausas"] = [dict(p) for p in cur.fetchall()]
-    else:
-        proc = None
+        global_coro = conn.fetchval(f"""
+            {_PAUSE_CTE}
+            SELECT AVG(
+                EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60
+                - COALESCE(pt.total_pause_min, 0)
+            )
+            FROM reproceso_procesos p
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE p.estado = 'FINALIZADO'
+        """)
 
-    cur.close()
-    conn.close()
-    return proc
+        sku_coro = conn.fetch("""
+            SELECT sku_destino, COUNT(*) AS count
+            FROM reproceso_procesos
+            WHERE operario_id = $1
+            GROUP BY sku_destino
+            ORDER BY count DESC
+        """, user_id)
 
+        op_row, global_avg, sku_rows = await asyncio.gather(op_coro, global_coro, sku_coro)
 
-def crear_proceso(proceso_id, operario_nombre, sku_destino, es_urgente=False):
-    """
-    Inserta un nuevo proceso de reproceso en estado 'CREADO'.
-
-    Args:
-        proceso_id: ID de texto (UUID) para el nuevo proceso. Generado por el caller.
-        operario_nombre: Nombre del operario responsable. Debe existir en la tabla de usuarios.
-        sku_destino: Codigo del SKU destino del proceso.
-        es_urgente: Si es True, el proceso se marca como urgente y aparece con prioridad. Por defecto False.
-
-    Returns:
-        El mismo proceso_id recibido como parametro, confirmando la insercion.
-
-    Raises:
-        ValueError: Si el operario_nombre no existe en la base de datos.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    # Get operario ID
-    cur.execute("SELECT id FROM reproceso_usuarios WHERE nombre = %s", (operario_nombre,))
-    user = cur.fetchone()
-    if not user:
-        cur.close()
-        conn.close()
-        raise ValueError(f"Operario '{operario_nombre}' no encontrado")
-
-    cur.execute("""
-        INSERT INTO reproceso_procesos (id, operario_id, sku_destino, estado, es_urgente)
-        VALUES (%s, %s, %s, 'CREADO', %s)
-    """, (proceso_id, user["id"], sku_destino, es_urgente))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-    return proceso_id
-
-
-def actualizar_estado(proceso_id, nueva_accion):
-    """
-    Actualiza el estado de un proceso segun la accion recibida.
-
-    Transiciones validas:
-        - 'start':  CREADO   -> INICIADO  (registra started_at)
-        - 'pause':  INICIADO -> PAUSADO   (crea registro en reproceso_pausas con inicio=NOW())
-        - 'resume': PAUSADO  -> INICIADO  (cierra el registro de pausa con fin=NOW())
-        - 'finish': cualquier estado no FINALIZADO -> FINALIZADO (registra finished_at;
-          si estaba PAUSADO, cierra la pausa abierta antes de finalizar)
-
-    Args:
-        proceso_id: ID de texto (UUID) del proceso a modificar.
-        nueva_accion: Una de las cadenas: 'start', 'pause', 'resume', 'finish'.
-
-    Returns:
-        Dict completo del proceso actualizado (equivalente a llamar get_proceso).
-
-    Raises:
-        ValueError: Si el proceso no existe, si la transicion no es valida para el
-                    estado actual, o si la accion es desconocida.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    # Get current state
-    cur.execute("SELECT estado FROM reproceso_procesos WHERE id = %s", (proceso_id,))
-    row = cur.fetchone()
-    if not row:
-        cur.close()
-        conn.close()
-        raise ValueError("Proceso no encontrado")
-
-    estado_actual = row["estado"]
-
-    if nueva_accion == "start":
-        if estado_actual != "CREADO":
-            raise ValueError("Solo procesos CREADOS pueden iniciarse")
-        cur.execute("""
-            UPDATE reproceso_procesos 
-            SET estado = 'INICIADO', started_at = NOW(), last_state_change = NOW()
-            WHERE id = %s
-        """, (proceso_id,))
-
-    elif nueva_accion == "pause":
-        if estado_actual != "INICIADO":
-            raise ValueError("Solo procesos INICIADOS pueden pausarse")
-        cur.execute("""
-            UPDATE reproceso_procesos 
-            SET estado = 'PAUSADO', last_state_change = NOW()
-            WHERE id = %s
-        """, (proceso_id,))
-        # Create pause record
-        cur.execute("""
-            INSERT INTO reproceso_pausas (proceso_id, inicio)
-            VALUES (%s, NOW())
-        """, (proceso_id,))
-
-    elif nueva_accion == "resume":
-        if estado_actual != "PAUSADO":
-            raise ValueError("Solo procesos PAUSADOS pueden reanudarse")
-        cur.execute("""
-            UPDATE reproceso_procesos 
-            SET estado = 'INICIADO', last_state_change = NOW()
-            WHERE id = %s
-        """, (proceso_id,))
-        # Close open pause
-        cur.execute("""
-            UPDATE reproceso_pausas 
-            SET fin = NOW()
-            WHERE proceso_id = %s AND fin IS NULL
-        """, (proceso_id,))
-
-    elif nueva_accion == "finish":
-        if estado_actual == "FINALIZADO":
-            raise ValueError("Proceso ya finalizado")
-        # Close open pause if paused
-        if estado_actual == "PAUSADO":
-            cur.execute("""
-                UPDATE reproceso_pausas 
-                SET fin = NOW()
-                WHERE proceso_id = %s AND fin IS NULL
-            """, (proceso_id,))
-        cur.execute("""
-            UPDATE reproceso_procesos 
-            SET estado = 'FINALIZADO', finished_at = NOW(), last_state_change = NOW()
-            WHERE id = %s
-        """, (proceso_id,))
-
-    else:
-        raise ValueError(f"Acción desconocida: {nueva_accion}")
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return get_proceso(proceso_id)
-
-
-def get_proceso_activo(operario_nombre):
-    """
-    Verifica si un operario tiene actualmente un proceso en estado 'INICIADO'.
-
-    Util para validar que no se inicien o reanuden dos procesos de forma simultanea.
-
-    Args:
-        operario_nombre: Nombre del operario a consultar.
-
-    Returns:
-        Dict con 'id' y 'sku_destino' del proceso activo, o None si no hay ninguno.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-        SELECT p.id, p.sku_destino
-        FROM reproceso_procesos p
-        JOIN reproceso_usuarios u ON u.id = p.operario_id
-        WHERE u.nombre = %s AND p.estado = 'INICIADO'
-        LIMIT 1
-    """, (operario_nombre,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return dict(row) if row else None
-
-
-def get_performance():
-    """
-    Retorna estadisticas de rendimiento por operario para la vista del Maestro.
-
-    Incluye solo usuarios con rol 'Operario'. Para cada operario calcula:
-    - Procesos completados (estado FINALIZADO)
-    - Total de procesos asignados
-    - Tiempo promedio por tarea en minutos (solo tareas finalizadas)
-
-    Returns:
-        Lista de dicts con campos: id, user (nombre), completed, total, avg_minutes.
-        avg_minutes puede ser None si el operario no tiene tareas finalizadas.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-        SELECT 
-            u.id,
-            u.nombre as user,
-            COUNT(CASE WHEN p.estado = 'FINALIZADO' THEN 1 END) as completed,
-            COUNT(p.id) as total,
-            AVG(CASE 
-                WHEN p.estado = 'FINALIZADO' 
-                THEN EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60 
-            END) as avg_minutes
-        FROM reproceso_usuarios u
-        LEFT JOIN reproceso_procesos p ON p.operario_id = u.id
-        WHERE u.rol = 'Operario'
-        GROUP BY u.id, u.nombre
-        ORDER BY u.nombre
-    """)
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def get_dashboard_stats():
-    """
-    Retorna estadisticas agregadas globales para el dashboard del Maestro.
-
-    Incluye:
-    - total_tasks: total de procesos en el sistema
-    - active_tasks: procesos en estado INICIADO
-    - finished_today: procesos finalizados en el dia actual
-    - pending_urgent: procesos urgentes que no estan finalizados
-    - global_avg_minutes: tiempo promedio de tarea (minutos) sobre todas las tareas finalizadas
-    - sku_distribution: lista de los top 5 SKUs mas procesados con su conteo
-
-    Returns:
-        Dict con todas las claves descritas arriba.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # 1. Counts
-    cur.execute("""
-        SELECT 
-            COUNT(*) as total_tasks,
-            COUNT(CASE WHEN estado = 'INICIADO' THEN 1 END) as active_tasks,
-            COUNT(CASE WHEN estado = 'FINALIZADO' AND finished_at >= CURRENT_DATE THEN 1 END) as finished_today,
-            COUNT(CASE WHEN es_urgente = TRUE AND estado != 'FINALIZADO' THEN 1 END) as pending_urgent
-        FROM reproceso_procesos
-    """)
-    stats = dict(cur.fetchone())
-    
-    # 2. General Efficiency (Avg minutes per task)
-    cur.execute("""
-        SELECT AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) / 60) as global_avg_minutes
-        FROM reproceso_procesos
-        WHERE estado = 'FINALIZADO'
-    """)
-    avg_row = cur.fetchone()
-    stats["global_avg_minutes"] = float(avg_row["global_avg_minutes"]) if avg_row and avg_row["global_avg_minutes"] else 0
-    
-    # 3. SKU Distribution (Top 5)
-    cur.execute("""
-        SELECT sku_destino, COUNT(*) as count
-        FROM reproceso_procesos
-        GROUP BY sku_destino
-        ORDER BY count DESC
-        LIMIT 5
-    """)
-    stats["sku_distribution"] = [dict(r) for r in cur.fetchall()]
-    
-    cur.close()
-    conn.close()
-    return stats
-
-
-def get_operator_kpis(user_id):
-    """
-    Retorna metricas detalladas de un operario comparadas contra el promedio global.
-
-    Util para el drill-down individual en la vista de rendimiento del Maestro.
-
-    Args:
-        user_id: ID entero del operario en la tabla reproceso_usuarios.
-
-    Returns:
-        Dict con:
-        - total: total de procesos del operario
-        - finished: procesos finalizados
-        - avg_minutes: tiempo promedio de tarea del operario (minutos), o None si no hay
-        - global_avg_minutes: promedio global de todos los operarios para comparacion
-        - skus: lista de dicts {sku_destino, count} con los SKUs que ha trabajado, ordenados por frecuencia
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # 1. Operator base metrics
-    cur.execute("""
-        SELECT 
-            COUNT(*) as total,
-            COUNT(CASE WHEN estado = 'FINALIZADO' THEN 1 END) as finished,
-            AVG(CASE 
-                WHEN estado = 'FINALIZADO' 
-                THEN EXTRACT(EPOCH FROM (finished_at - started_at)) / 60 
-            END) as avg_minutes
-        FROM reproceso_procesos
-        WHERE operario_id = %s
-    """, (user_id,))
-    op_stats = dict(cur.fetchone())
-    
-    # 2. Global averages for comparison
-    cur.execute("""
-        SELECT 
-            AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) / 60) as global_avg
-        FROM reproceso_procesos
-        WHERE estado = 'FINALIZADO'
-    """)
-    global_avg = cur.fetchone()["global_avg"]
-    op_stats["global_avg_minutes"] = float(global_avg) if global_avg else 0
-    
-    # 3. Activity by SKU
-    cur.execute("""
-        SELECT sku_destino, COUNT(*) as count
-        FROM reproceso_procesos
-        WHERE operario_id = %s
-        GROUP BY sku_destino
-        ORDER BY count DESC
-    """, (user_id,))
-    op_stats["skus"] = [dict(r) for r in cur.fetchall()]
-    
-    cur.close()
-    conn.close()
-    return op_stats
+        op_stats = dict(op_row)
+        op_stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
+        op_stats["skus"] = [dict(r) for r in sku_rows]
+        return op_stats

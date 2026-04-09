@@ -5,7 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PRD+ Demo | Consolidación SKU</title>
-    <link rel="stylesheet" href="/static/app.css?v=3">
+    <link rel="stylesheet" href="/static/css/base.css?v=6">
+    <link rel="stylesheet" href="/static/css/layout.css?v=6">
+    <link rel="stylesheet" href="/static/css/login.css?v=6">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=6">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -62,12 +65,27 @@
                     
                     <!-- User Picker -->
                     <div class="user-picker" id="user-picker-container">
-                        <p class="user-picker-label">Selecciona tu usuario</p>
-                        <div class="user-picker-grid" id="user-picker-grid">
-                            <!-- populated by JS -->
-                            <div class="user-picker-skeleton"></div>
-                            <div class="user-picker-skeleton"></div>
-                            <div class="user-picker-skeleton"></div>
+                        <div class="user-picker-controls">
+                            <p class="user-picker-label">Selecciona tu usuario</p>
+                            <div class="search-box">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                                </svg>
+                                <input type="text" id="user-search-input" placeholder="Buscar por nombre..." autocomplete="off">
+                            </div>
+                        </div>
+                        
+                        <div id="user-picker-sections" class="user-picker-sections">
+                            <!-- Populated by JS: Sections like 'Maestros', 'Operarios' -->
+                            <div class="user-picker-grid" id="user-picker-grid">
+                                <!-- Fallback/Skeleton -->
+                                <div class="user-picker-skeleton"></div>
+                                <div class="user-picker-skeleton"></div>
+                                <div class="user-picker-skeleton"></div>
+                            </div>
+                        </div>
+                        <div id="no-results" class="hidden no-results">
+                            <p>No se encontraron operarios con ese nombre.</p>
                         </div>
                     </div>
 
@@ -374,6 +392,20 @@
             <div class="grid-layout">
                 <!-- Info Panel -->
                 <div class="card info-panel">
+                    <!-- Product Hero Card -->
+                    <div class="product-hero" id="detail-product-hero">
+                        <div class="product-image-wrapper">
+                            <img id="detail-product-image" src="" alt="Producto" class="product-image"
+                                onerror="if(this.src.indexOf('.jpg') !== -1) { this.src=this.src.replace('.jpg', '.png'); } else { this.src='https://placehold.co/200x200/1e293b/FFFFFF?text=SKU'; }">
+                        </div>
+                        <div class="product-info">
+                            <span class="product-code" id="detail-product-code">SKU-???</span>
+                            <h2 class="product-name" id="detail-product-name">Nombre del Producto</h2>
+                        </div>
+                    </div>
+
+                    <div class="detail-separator"></div>
+
                     <h3>Detalles del Proceso</h3>
                     <div class="info-row">
                         <span class="label">Operario:</span>
@@ -387,8 +419,6 @@
                         <span class="label">Fin:</span>
                         <span class="value" id="detail-end-time">-</span>
                     </div>
-
-                    <!-- SKU Origen Display Removed -->
                 </div>
 
                 <!-- Status Panel (Replaces Timer) -->
@@ -440,7 +470,11 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/js/constants.js?v=6"></script>
+    <script src="/static/js/api.js?v=6"></script>
+    <script src="/static/js/store.js?v=6"></script>
+    <script src="/static/js/ui.js?v=6"></script>
+    <script src="/static/js/app.js?v=6"></script>
 </body>
 
 </html>

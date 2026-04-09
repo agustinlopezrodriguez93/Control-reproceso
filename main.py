@@ -26,10 +26,10 @@ async def lifespan(app: FastAPI):
     """
     Gestor del ciclo de vida de la aplicacion FastAPI.
     """
-    # Startup: Initialize database tables and seed data
+    # Startup: Initialize database tables and seed data (async — no bloquea el event loop)
     logger.info("--- [REPROCESO] Iniciando aplicación...")
     try:
-        init_db()
+        await init_db()
         logger.info("--- [REPROCESO] Base de datos lista. Sistema operativo.")
     except Exception as e:
         logger.error(f"--- [REPROCESO] ERROR CRÍTICO DE CONEXIÓN: {e}")

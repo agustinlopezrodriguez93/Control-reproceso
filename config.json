@@ -23,9 +23,9 @@
         ],
         "users": [
             {
-                "name": "Maestro",
+                "name": "Admin",
                 "role": "Maestro",
-                "avatar": "S"
+                "avatar": "AD"
             },
             {
                 "name": "Usuario 1",
