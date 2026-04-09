@@ -155,6 +155,12 @@
                         </svg>
                         Auditoría
                     </button>
+                    <button id="btn-view-inventory" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="5" rx="1"/><path d="M2 8v13h20V8"/><path d="M10 12h4"/>
+                        </svg>
+                        Inventario
+                    </button>
                     <button id="btn-new-process" class="btn btn-primary">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
@@ -567,6 +573,63 @@
     <div id="snackbar-container"></div>
 
     <!-- Modal Template -->
+    <!-- View: Inventario Laudus (Maestro Only) -->
+    <section id="view-inventory" class="view hidden">
+        <div class="view-header">
+            <div class="header-left-nav">
+                <button class="btn btn-ghost btn-sm btn-back" onclick="UI.navigateTo('view-dashboard')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <h1>Inventario Laudus</h1>
+            </div>
+            <div class="header-actions">
+                <button id="btn-sync-inventory" class="btn btn-primary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                    </svg>
+                    Sincronizar
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="kpi-grid" id="inventory-stats" style="margin-bottom:1rem;">
+            <div class="kpi-card"><div class="kpi-value" id="inv-total">—</div><div class="kpi-label">Total productos</div></div>
+            <div class="kpi-card"><div class="kpi-value" id="inv-con-stock" style="color:var(--success,#22c55e)">—</div><div class="kpi-label">Con stock</div></div>
+            <div class="kpi-card"><div class="kpi-value" id="inv-bajo" style="color:var(--warning,#f59e0b)">—</div><div class="kpi-label">Stock bajo</div></div>
+            <div class="kpi-card"><div class="kpi-value" id="inv-sin-stock" style="color:var(--danger,#ef4444)">—</div><div class="kpi-label">Sin stock</div></div>
+        </div>
+
+        <!-- Search -->
+        <div class="card" style="padding:.75rem 1rem;margin-bottom:1rem;">
+            <div class="search-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+                <input type="text" id="inv-search" placeholder="Buscar por SKU o descripción..." autocomplete="off" style="border:none;background:transparent;outline:none;width:100%;font-size:.9rem;">
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Descripción</th>
+                            <th>Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventory-table-body">
+                        <tr><td colspan="3" style="text-align:center;color:var(--text-muted)">Presiona Sincronizar para cargar datos</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
     <div id="modal-overlay" class="modal-overlay hidden">
         <div class="modal-card">
             <h2 id="modal-title">Título</h2>
@@ -605,13 +668,14 @@
     <script src="/static/js/api.js?v=8"></script>
     <script src="/static/js/store.js?v=8"></script>
     <!-- Módulos de vistas — deben cargarse antes de ui.js para que UI pueda delegar en ellos -->
-    <script src="/static/js/views/dashboard.js?v=8"></script>
-    <script src="/static/js/views/detail.js?v=8"></script>
-    <script src="/static/js/views/performance.js?v=8"></script>
-    <script src="/static/js/views/users.js?v=8"></script>
-    <script src="/static/js/ui.js?v=8"></script>
-    <script src="/static/js/break-monitor.js?v=8"></script>
-    <script src="/static/js/app.js?v=8"></script>
+    <script src="/static/js/views/dashboard.js?v=9"></script>
+    <script src="/static/js/views/detail.js?v=9"></script>
+    <script src="/static/js/views/performance.js?v=9"></script>
+    <script src="/static/js/views/users.js?v=9"></script>
+    <script src="/static/js/views/inventory.js?v=9"></script>
+    <script src="/static/js/ui.js?v=9"></script>
+    <script src="/static/js/break-monitor.js?v=9"></script>
+    <script src="/static/js/app.js?v=9"></script>
 </body>
 
 </html>

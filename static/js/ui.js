@@ -102,6 +102,8 @@ const UI = {
             ViewUsers.renderAudit();
         } else if (viewId === 'view-performance') {
             ViewPerformance.render();
+        } else if (viewId === 'view-inventory') {
+            ViewInventory.render();
         }
     },
 
@@ -490,6 +492,9 @@ const UI = {
 
         const btnAudit = document.getElementById('btn-view-audit');
         if (btnAudit) btnAudit.onclick = () => UI.navigateTo('view-audit');
+
+        const btnInventory = document.getElementById('btn-view-inventory');
+        if (btnInventory) btnInventory.onclick = () => UI.navigateTo('view-inventory');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 

@@ -10,7 +10,7 @@ const ViewDashboard = {
         const currentRole = Store.state.currentRole;
         const isMaestro = currentRole === 'Maestro';
 
-        ['btn-view-performance', 'btn-view-users', 'btn-view-audit'].forEach(id => {
+        ['btn-view-performance', 'btn-view-users', 'btn-view-audit', 'btn-view-inventory'].forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.classList.toggle('hidden', !isMaestro);
         });
