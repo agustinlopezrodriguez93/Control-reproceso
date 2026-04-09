@@ -16,7 +16,7 @@ from db import (
     get_performance, get_usuario_por_nombre, get_usuario_por_id,
     crear_usuario, borrar_usuario, get_audit_logs, log_audit,
     get_dashboard_stats, get_operator_kpis, get_sku_human_resources,
-    get_break_config, set_break_config
+    get_break_config, set_break_config, get_conn
 )
 from auth import (
     verify_password, verify_password_async, create_access_token,
@@ -467,3 +467,72 @@ async def api_inventory_stock(maestro=Depends(require_maestro)):
     except Exception as e:
         _log.error(f"[Laudus] Error al obtener inventario: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"Error al conectar con Laudus: {str(e)}")
+
+
+# ─── Stock Rules ──────────────────────────────
+
+class StockRuleIn(BaseModel):
+    sku: str
+    stock_minimo: int
+    stock_critico: int
+
+    @field_validator('sku')
+    @classmethod
+    def sku_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError('SKU no puede estar vacío')
+        return v.strip().upper()
+
+    @field_validator('stock_minimo', 'stock_critico')
+    @classmethod
+    def non_negative(cls, v):
+        if v < 0:
+            raise ValueError('Los umbrales deben ser >= 0')
+        return v
+
+
+@router.get("/stock-rules")
+async def get_stock_rules(maestro=Depends(require_maestro)):
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            "SELECT id, sku, stock_minimo, stock_critico, updated_at FROM stock_rules ORDER BY sku"
+        )
+    return {"rules": [dict(r) for r in rows]}
+
+
+@router.post("/stock-rules", status_code=201)
+async def create_stock_rule(body: StockRuleIn, maestro=Depends(require_maestro)):
+    async with get_conn() as conn:
+        try:
+            row = await conn.fetchrow(
+                """INSERT INTO stock_rules (sku, stock_minimo, stock_critico)
+                   VALUES ($1, $2, $3)
+                   RETURNING id, sku, stock_minimo, stock_critico, updated_at""",
+                body.sku, body.stock_minimo, body.stock_critico
+            )
+        except asyncpg.UniqueViolationError:
+            raise HTTPException(status_code=409, detail=f"Ya existe una regla para SKU {body.sku}")
+    return dict(row)
+
+
+@router.put("/stock-rules/{rule_id}")
+async def update_stock_rule(rule_id: int, body: StockRuleIn, maestro=Depends(require_maestro)):
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            """UPDATE stock_rules
+               SET sku=$1, stock_minimo=$2, stock_critico=$3, updated_at=NOW()
+               WHERE id=$4
+               RETURNING id, sku, stock_minimo, stock_critico, updated_at""",
+            body.sku, body.stock_minimo, body.stock_critico, rule_id
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Regla no encontrada")
+    return dict(row)
+
+
+@router.delete("/stock-rules/{rule_id}", status_code=204)
+async def delete_stock_rule(rule_id: int, maestro=Depends(require_maestro)):
+    async with get_conn() as conn:
+        result = await conn.execute("DELETE FROM stock_rules WHERE id=$1", rule_id)
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Regla no encontrada")

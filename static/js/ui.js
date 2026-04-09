@@ -104,6 +104,8 @@ const UI = {
             ViewPerformance.render();
         } else if (viewId === 'view-inventory') {
             ViewInventory.render();
+        } else if (viewId === 'view-stock-rules') {
+            ViewStockRules.render();
         }
     },
 
@@ -495,6 +497,9 @@ const UI = {
 
         const btnInventory = document.getElementById('btn-view-inventory');
         if (btnInventory) btnInventory.onclick = () => UI.navigateTo('view-inventory');
+
+        const btnStockRules = document.getElementById('btn-view-stock-rules');
+        if (btnStockRules) btnStockRules.onclick = () => UI.navigateTo('view-stock-rules');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 

@@ -102,10 +102,20 @@ CREATE TABLE IF NOT EXISTS reproceso_pausas (
     fin        TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS stock_rules (
+    id             SERIAL PRIMARY KEY,
+    sku            TEXT NOT NULL UNIQUE,
+    stock_minimo   INTEGER NOT NULL DEFAULT 10,
+    stock_critico  INTEGER NOT NULL DEFAULT 5,
+    created_at     TIMESTAMPTZ DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_procesos_operario  ON reproceso_procesos(operario_id);
 CREATE INDEX IF NOT EXISTS idx_procesos_estado    ON reproceso_procesos(estado);
 CREATE INDEX IF NOT EXISTS idx_pausas_proceso     ON reproceso_pausas(proceso_id);
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp    ON reproceso_audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_rules_sku    ON stock_rules(sku);
 """
 
 

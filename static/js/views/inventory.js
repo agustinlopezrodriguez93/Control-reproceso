@@ -4,11 +4,19 @@
  */
 const ViewInventory = (() => {
     let _allProducts = [];
+    let _rulesMap = {};   // sku → { stock_minimo, stock_critico }
 
-    function _stockClass(qty) {
-        if (qty <= 0)   return 'stock-zero';
-        if (qty < 10)   return 'stock-low';
-        if (qty < 50)   return 'stock-med';
+    function _stockClass(sku, qty) {
+        if (qty <= 0) return 'stock-zero';
+        const rule = _rulesMap[sku.toUpperCase()];
+        if (rule) {
+            if (qty <= rule.stock_critico)  return 'stock-low';
+            if (qty <= rule.stock_minimo)   return 'stock-med';
+            return 'stock-high';
+        }
+        // Sin regla: umbrales por defecto
+        if (qty < 5)  return 'stock-low';
+        if (qty < 20) return 'stock-med';
         return 'stock-high';
     }
 
@@ -23,8 +31,8 @@ const ViewInventory = (() => {
 
         tbody.innerHTML = products.map(p => {
             const qty   = p.stock ?? 0;
-            const cls   = _stockClass(qty);
-            const label = qty <= 0 ? 'Sin stock' : qty < 10 ? 'Stock bajo' : qty < 50 ? 'Medio' : 'Alto';
+            const cls   = _stockClass(p.sku || '', qty);
+            const label = cls === 'stock-zero' ? 'Sin stock' : cls === 'stock-low' ? 'Crítico' : cls === 'stock-med' ? 'Bajo' : 'OK';
             return `<tr>
                 <td><code>${p.sku || '—'}</code></td>
                 <td>${p.description || '—'}</td>
@@ -73,8 +81,14 @@ const ViewInventory = (() => {
         if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
 
         try {
-            const data = await API.get('/api/inventory/stock');
-            _allProducts = data.products || [];
+            // Traer reglas y stock en paralelo
+            const [stockData, rulesData] = await Promise.all([
+                API.get('/api/inventory/stock'),
+                API.get('/api/stock-rules').catch(() => ({ rules: [] }))
+            ]);
+            _rulesMap = {};
+            (rulesData.rules || []).forEach(r => { _rulesMap[r.sku.toUpperCase()] = r; });
+            _allProducts = stockData.products || [];
             _render(_allProducts);
             _updateStats(_allProducts);
 
