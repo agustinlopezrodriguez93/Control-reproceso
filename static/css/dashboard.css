@@ -93,3 +93,309 @@
 .trend-stable {
     color: var(--text-secondary);
 }
+
+/* ─── Break Config Panel ───────────────────── */
+
+.break-config-card {
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.break-config-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* Toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: #334155;
+    border-radius: 28px;
+    transition: background 0.25s;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    left: 4px;
+    top: 4px;
+    background: #94a3b8;
+    border-radius: 50%;
+    transition: transform 0.25s, background 0.25s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: rgba(99, 102, 241, 0.4);
+    border: 1px solid #6366f1;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(24px);
+    background: #6366f1;
+}
+
+/* Fields grid */
+.break-config-fields {
+    margin-top: 1.5rem;
+}
+
+.break-config-grid {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.break-config-item {
+    flex: 1;
+    min-width: 200px;
+}
+
+.break-config-item label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.6rem;
+}
+
+.break-config-arrow {
+    font-size: 1.5rem;
+    color: var(--text-secondary);
+    padding-top: 2.2rem;
+    flex-shrink: 0;
+}
+
+.input-number-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.input-number {
+    width: 90px;
+    text-align: center;
+    font-size: 1.4rem;
+    font-weight: 700;
+    padding: 0.5rem;
+}
+
+.input-unit {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.input-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 0.4rem;
+}
+
+.break-config-preview {
+    margin-top: 1.2rem;
+    padding: 0.75rem 1rem;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    color: #a5b4fc;
+    font-weight: 500;
+    text-align: center;
+}
+
+.break-config-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Disabled state for fields */
+.break-config-fields.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* ─── Break Modal ───────────────────────────── */
+
+.break-modal-card {
+    text-align: center;
+    padding: 2.5rem 2rem;
+    max-width: 360px;
+    border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+.break-modal-icon {
+    font-size: 3rem;
+    margin-bottom: 0.75rem;
+    line-height: 1;
+}
+
+.break-modal-card h2 {
+    font-size: 1.4rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.break-modal-card p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.break-countdown-wrapper {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    margin: 0 auto 1.5rem;
+}
+
+.break-countdown-ring {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.break-ring-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.08);
+    stroke-width: 8;
+}
+
+.break-ring-progress {
+    fill: none;
+    stroke: #6366f1;
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 276.46;  /* 2π × 44 */
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 1s linear;
+}
+
+.break-ring-progress.done {
+    stroke: #10b981;
+}
+
+.break-countdown-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+#break-countdown-display {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.break-countdown-label {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-top: 0.1rem;
+}
+
+.btn-block {
+    width: 100%;
+    justify-content: center;
+}
+
+/* ─── SKU Human Resources ──────────────────── */
+
+.sku-hr-section {
+    margin-top: 2rem;
+}
+
+.section-title-row {
+    margin-bottom: 0.25rem;
+}
+
+.section-title-row h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.section-title-row .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.2rem;
+}
+
+.sku-code-badge {
+    display: inline-block;
+    background: rgba(99, 102, 241, 0.15);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    font-family: monospace;
+}
+
+.sku-hr-bar-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.sku-hr-bar-wrap {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+    min-width: 60px;
+}
+
+.sku-hr-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #a855f7);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+.sku-hr-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    min-width: 3.5rem;
+    text-align: right;
+}
+
+.text-secondary {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.mt-2 {
+    margin-top: 1.5rem;
+}

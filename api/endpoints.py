@@ -15,14 +15,22 @@ from db import (
     crear_proceso, actualizar_estado, get_proceso_activo,
     get_performance, get_usuario_por_nombre, get_usuario_por_id,
     crear_usuario, borrar_usuario, get_audit_logs, log_audit,
-    get_dashboard_stats, get_operator_kpis
+    get_dashboard_stats, get_operator_kpis, get_sku_human_resources,
+    get_break_config, set_break_config
 )
 from auth import (
-    verify_password, create_access_token, get_current_user,
+    verify_password, verify_password_async, create_access_token,
+    get_current_user, get_current_user_with_role,
     check_rate_limit, register_failed_attempt, clear_failed_attempts
 )
 
 router = APIRouter(prefix="/api", tags=["reproceso"])
+
+# ─── Caché en memoria ──────────────────────────
+import time as _time
+
+_public_users_cache: dict = {"data": None, "ts": 0.0}
+_PUBLIC_USERS_TTL = 60  # segundos — los usuarios cambian raramente
 
 
 # ─── Request Models ───────────────────────────
@@ -61,24 +69,43 @@ class CrearUsuarioRequest(BaseModel):
         return v
 
 
+class BreakConfigRequest(BaseModel):
+    enabled: bool
+    work_minutes: int
+    rest_minutes: int
+
+    @field_validator("work_minutes", "rest_minutes")
+    @classmethod
+    def validate_positive(cls, v: int) -> int:
+        if v < 1 or v > 480:
+            raise ValueError("El valor debe estar entre 1 y 480 minutos")
+        return v
+
+
 # ─── Dependencies ──────────────────────────────
 
-async def require_maestro(current_user: str = Depends(get_current_user)):
-    """Requiere rol Maestro. Retorna el dict del usuario autenticado.
-    Centraliza la verificación de rol — evita boilerplate repetido en 6 endpoints."""
-    user = await get_usuario_por_nombre(current_user)
-    if not user or user["rol"] != "Maestro":
+async def require_maestro(token_data: dict = Depends(get_current_user_with_role)):
+    """Requiere rol Maestro. Lee el rol directamente del JWT — sin query a DB.
+    Retorna dict con nombre y rol del usuario autenticado."""
+    if token_data.get("rol") != "Maestro":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
-    return user
+    return token_data
 
 
 # ─── Endpoints ─────────────────────────────────
 
 @router.get("/users-public")
 async def api_public_users():
-    """Lista usuarios para el picker de login. Sin autenticación."""
-    usuarios = await get_usuarios()
-    return {"users": [{"nombre": u["nombre"], "avatar": u["avatar"], "rol": u["rol"]} for u in usuarios]}
+    """Lista usuarios para el picker de login. Sin autenticación.
+    Cacheado en memoria por 60s — los usuarios cambian raramente."""
+    now = _time.monotonic()
+    if _public_users_cache["data"] is None or now - _public_users_cache["ts"] > _PUBLIC_USERS_TTL:
+        usuarios = await get_usuarios()
+        _public_users_cache["data"] = [
+            {"nombre": u["nombre"], "avatar": u["avatar"], "rol": u["rol"]} for u in usuarios
+        ]
+        _public_users_cache["ts"] = now
+    return {"users": _public_users_cache["data"]}
 
 
 @router.post("/login")
@@ -95,7 +122,7 @@ async def api_login(request: Request, form_data: OAuth2PasswordRequestForm = Dep
     await check_rate_limit(client_ip)
 
     user = await get_usuario_por_nombre(form_data.username)
-    if not user or not verify_password(form_data.password, user.get("password_hash") or ""):
+    if not user or not await verify_password_async(form_data.password, user.get("password_hash") or ""):
         await register_failed_attempt(client_ip)
         if user:
             await log_audit(user["nombre"], "LOGIN_FALLIDO", f"Intento fallido desde {client_ip}")
@@ -106,7 +133,8 @@ async def api_login(request: Request, form_data: OAuth2PasswordRequestForm = Dep
         )
 
     await clear_failed_attempts(client_ip)
-    access_token = create_access_token(data={"sub": user["nombre"]})
+    # Incluir rol en el token para evitar query a DB en cada endpoint protegido
+    access_token = create_access_token(data={"sub": user["nombre"], "rol": user["rol"]})
     await log_audit(user["nombre"], "LOGIN", f"Inicio de sesión exitoso desde {client_ip}")
 
     return {
@@ -263,6 +291,7 @@ async def api_add_user(req: CrearUsuarioRequest, maestro=Depends(require_maestro
     """Crea un usuario. Contraseña hasheada con bcrypt. Solo Maestro."""
     try:
         new_id = await crear_usuario(req.nombre, req.password, req.rol, req.avatar)
+        _public_users_cache["data"] = None  # Invalidar caché al agregar usuario
         await log_audit(maestro["nombre"], "USUARIO_CREADO", f"Nombre: {req.nombre}, Rol: {req.rol}")
         return {"ok": True, "id": new_id}
     except asyncpg.UniqueViolationError:
@@ -275,13 +304,15 @@ async def api_add_user(req: CrearUsuarioRequest, maestro=Depends(require_maestro
 async def api_delete_user(user_id: int, maestro=Depends(require_maestro)):
     """Elimina un usuario. Solo Maestro.
     No se puede eliminar la propia cuenta ni la cuenta 'Admin'."""
-    if maestro["id"] == user_id:
+    target_user = await get_usuario_por_id(user_id)
+
+    # Comparar por nombre (disponible en JWT) en lugar de por id numérico
+    if target_user and target_user["nombre"] == maestro["nombre"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No puedes eliminar tu propia cuenta mientras estás autenticado."
         )
 
-    target_user = await get_usuario_por_id(user_id)
     if target_user and target_user["nombre"] == "Admin":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -289,6 +320,7 @@ async def api_delete_user(user_id: int, maestro=Depends(require_maestro)):
         )
 
     await borrar_usuario(user_id)
+    _public_users_cache["data"] = None  # Invalidar caché al eliminar usuario
     await log_audit(
         maestro["nombre"], "USUARIO_ELIMINADO",
         f"ID: {user_id}, Nombre: {target_user['nombre'] if target_user else 'desconocido'}"
@@ -298,7 +330,32 @@ async def api_delete_user(user_id: int, maestro=Depends(require_maestro)):
 
 # ─── Audit Logs (Maestro Only) ────────────────
 
+@router.get("/sku-stats")
+async def api_sku_stats(maestro=Depends(require_maestro)):
+    """Recurso humano por SKU: horas-hombre, promedio, min/max por proceso. Solo Maestro."""
+    return {"sku_stats": await get_sku_human_resources()}
+
+
 @router.get("/audit")
 async def api_audit(maestro=Depends(require_maestro)):
     """Últimas 100 entradas del log de auditoría. Solo Maestro."""
     return {"logs": await get_audit_logs()}
+
+
+# ─── Break Config ─────────────────────────────
+
+@router.get("/break-config")
+async def api_get_break_config():
+    """Configuración de pausas obligatorias. Sin autenticación — el frontend operario lo necesita."""
+    return await get_break_config()
+
+
+@router.put("/break-config")
+async def api_set_break_config(req: BreakConfigRequest, maestro=Depends(require_maestro)):
+    """Actualiza la configuración de pausas obligatorias. Solo Maestro."""
+    result = await set_break_config(req.enabled, req.work_minutes, req.rest_minutes)
+    await log_audit(
+        maestro["nombre"], "CONFIG_PAUSAS",
+        f"enabled={req.enabled}, work={req.work_minutes}min, rest={req.rest_minutes}min"
+    )
+    return result

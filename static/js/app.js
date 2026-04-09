@@ -18,6 +18,10 @@ const app = {
         UI.init();
         if (loggedIn) {
             UI.navigateTo('view-dashboard');
+            // Iniciar monitor de pausas solo para operarios
+            if (Store.state.currentRole === 'Operario') {
+                BreakMonitor.init();
+            }
         } else {
             UI.navigateTo('view-login');
         }
@@ -35,6 +39,9 @@ const app = {
             if (ok) {
                 UI.showSnackbar(`Bienvenido, ${Store.state.currentUser}`);
                 UI.navigateTo('view-dashboard');
+                if (Store.state.currentRole === 'Operario') {
+                    BreakMonitor.init();
+                }
             }
         } catch (err) {
             UI.showSnackbar(err.message || 'Error al iniciar sesión', 'error');
@@ -52,6 +59,11 @@ const app = {
 
     viewDetail(id) {
         UI.navigateTo('view-detail', id);
+    },
+
+    viewDetailPreloaded(proc) {
+        // Navegar al detalle con datos ya en store — evita fetch extra
+        UI.navigateTo('view-detail', proc.id);
     },
 
     // ─── Creación de Procesos ─────────────────────
@@ -259,6 +271,47 @@ const app = {
 
     async loadOperatorKPIs(userId) {
         await UI.loadOperatorKPIs(userId);
+    },
+
+    // ─── Break Config (Maestro) ───────────────────
+
+    async loadBreakConfig() {
+        try {
+            const cfg = await Store.loadBreakConfig();
+            const toggle = document.getElementById('break-enabled-toggle');
+            const workInput = document.getElementById('break-work-minutes');
+            const restInput = document.getElementById('break-rest-minutes');
+
+            if (toggle) toggle.checked = cfg.enabled;
+            if (workInput) workInput.value = cfg.work_minutes;
+            if (restInput) restInput.value = cfg.rest_minutes;
+
+            UI.updateBreakConfigUI(cfg.enabled);
+            UI.updateBreakPreview();
+        } catch (err) {
+            console.error('Error loading break config:', err);
+        }
+    },
+
+    async saveBreakConfig() {
+        const toggle = document.getElementById('break-enabled-toggle');
+        const workInput = document.getElementById('break-work-minutes');
+        const restInput = document.getElementById('break-rest-minutes');
+
+        const enabled = toggle?.checked || false;
+        const workMin = parseInt(workInput?.value) || 90;
+        const restMin = parseInt(restInput?.value) || 10;
+
+        await this.withLoading('btn-save-break-config', async () => {
+            try {
+                await Store.saveBreakConfig(enabled, workMin, restMin);
+                UI.showSnackbar('Configuración guardada', 'success');
+                // Recargar la config en el monitor de pausas
+                BreakMonitor.reload();
+            } catch (err) {
+                UI.showSnackbar(err.message || 'Error al guardar', 'error');
+            }
+        });
     }
 };
 

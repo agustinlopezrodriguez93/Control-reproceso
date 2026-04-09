@@ -54,6 +54,11 @@ async def get_conn():
 
 # ─── Schema + Índices ────────────────────────
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS reproceso_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reproceso_usuarios (
     id            SERIAL PRIMARY KEY,
     nombre        TEXT NOT NULL UNIQUE,
@@ -135,6 +140,15 @@ async def init_db():
                         nombre, rol, avatar, get_password_hash(pw)
                     )
             logger.info("[DB] Usuarios por defecto creados.")
+
+        # Seed config de pausas obligatorias (valores por defecto: desactivado)
+        await conn.execute("""
+            INSERT INTO reproceso_config (key, value) VALUES
+                ('break_enabled',       'false'),
+                ('break_work_minutes',  '90'),
+                ('break_rest_minutes',  '10')
+            ON CONFLICT (key) DO NOTHING
+        """)
 
         # Seed SKUs
         sku_count = await conn.fetchval("SELECT COUNT(*) FROM reproceso_skus")
@@ -226,10 +240,19 @@ async def get_audit_logs(limit: int = 100) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+_skus_cache: list[str] | None = None
+
+
 async def get_skus() -> list[str]:
-    async with get_conn() as conn:
-        rows = await conn.fetch("SELECT codigo FROM reproceso_skus ORDER BY codigo")
-        return [r["codigo"] for r in rows]
+    """Retorna SKUs cacheados en memoria. Los SKUs son datos estáticos de configuración
+    y no cambian en runtime — el caché es permanente hasta reiniciar el servidor."""
+    global _skus_cache
+    if _skus_cache is None:
+        async with get_conn() as conn:
+            rows = await conn.fetch("SELECT codigo FROM reproceso_skus ORDER BY codigo")
+            _skus_cache = [r["codigo"] for r in rows]
+        logger.info(f"[DB] SKUs cacheados en memoria ({len(_skus_cache)} items).")
+    return _skus_cache
 
 
 async def _attach_pausas_batch(conn: asyncpg.Connection, procesos: list[dict]) -> list[dict]:
@@ -449,10 +472,11 @@ async def get_performance() -> list[dict]:
 
 
 async def get_dashboard_stats() -> dict:
+    """3 queries secuenciales sobre la misma conexión del pool.
+    asyncpg no soporta múltiples queries en paralelo sobre una sola conexión —
+    asyncio.gather() con la misma conn causa 'connection is borrowed' en producción."""
     async with get_conn() as conn:
-        # Las 3 consultas son independientes — se ejecutan en paralelo
-        import asyncio
-        counts_coro = conn.fetchrow("""
+        counts = await conn.fetchrow("""
             SELECT
                 COUNT(*) AS total_tasks,
                 COUNT(CASE WHEN estado = 'INICIADO' THEN 1 END) AS active_tasks,
@@ -460,8 +484,7 @@ async def get_dashboard_stats() -> dict:
                 COUNT(CASE WHEN es_urgente = TRUE AND estado != 'FINALIZADO' THEN 1 END) AS pending_urgent
             FROM reproceso_procesos
         """)
-        # CTE pre-agrega pausas para calcular promedio global sin subconsultas correlacionadas
-        avg_coro = conn.fetchval("""
+        global_avg = await conn.fetchval("""
             WITH pause_totals AS (
                 SELECT proceso_id,
                        SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
@@ -476,7 +499,7 @@ async def get_dashboard_stats() -> dict:
             LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
             WHERE p.estado = 'FINALIZADO'
         """)
-        sku_coro = conn.fetch("""
+        sku_rows = await conn.fetch("""
             SELECT sku_destino, COUNT(*) AS count
             FROM reproceso_procesos
             GROUP BY sku_destino
@@ -484,29 +507,66 @@ async def get_dashboard_stats() -> dict:
             LIMIT 5
         """)
 
-        counts, global_avg, sku_rows = await asyncio.gather(counts_coro, avg_coro, sku_coro)
+    stats = dict(counts)
+    stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
+    stats["sku_distribution"] = [dict(r) for r in sku_rows]
+    return stats
 
-        stats = dict(counts)
-        stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
-        stats["sku_distribution"] = [dict(r) for r in sku_rows]
-        return stats
+
+async def get_sku_human_resources() -> list[dict]:
+    """
+    Recurso humano por SKU: para cada SKU retorna cuántos procesos se hicieron,
+    cuántas horas-hombre efectivas (sin pausas) se invirtieron en total,
+    el promedio por proceso y cuántos operarios distintos lo trabajaron.
+    Solo incluye procesos FINALIZADOS para tener datos completos.
+    """
+    async with get_conn() as conn:
+        rows = await conn.fetch("""
+            WITH pause_totals AS (
+                SELECT proceso_id,
+                       SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) AS total_pause_sec
+                FROM reproceso_pausas
+                GROUP BY proceso_id
+            ),
+            proceso_times AS (
+                SELECT
+                    p.sku_destino,
+                    p.operario_id,
+                    EXTRACT(EPOCH FROM (p.finished_at - p.started_at))
+                        - COALESCE(pt.total_pause_sec, 0) AS effective_sec
+                FROM reproceso_procesos p
+                LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+                WHERE p.estado = 'FINALIZADO'
+                  AND p.started_at IS NOT NULL
+                  AND p.finished_at IS NOT NULL
+            )
+            SELECT
+                sku_destino,
+                COUNT(*)                          AS total_procesos,
+                COUNT(DISTINCT operario_id)        AS total_operarios,
+                ROUND(SUM(effective_sec) / 3600.0, 2)  AS total_horas_hombre,
+                ROUND(AVG(effective_sec) / 60.0, 1)    AS promedio_minutos,
+                ROUND(MIN(effective_sec) / 60.0, 1)    AS minimo_minutos,
+                ROUND(MAX(effective_sec) / 60.0, 1)    AS maximo_minutos
+            FROM proceso_times
+            GROUP BY sku_destino
+            ORDER BY total_horas_hombre DESC
+        """)
+        return [dict(r) for r in rows]
 
 
 async def get_operator_kpis(user_id: int) -> dict:
+    """3 queries secuenciales — asyncpg no soporta gather sobre la misma conexión."""
+    _PAUSE_CTE = """
+        WITH pause_totals AS (
+            SELECT proceso_id,
+                   SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
+            FROM reproceso_pausas
+            GROUP BY proceso_id
+        )
+    """
     async with get_conn() as conn:
-        import asyncio
-
-        # CTE compartida: pre-agrega pausas para evitar subconsultas correlacionadas
-        _PAUSE_CTE = """
-            WITH pause_totals AS (
-                SELECT proceso_id,
-                       SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW()) - inicio))) / 60 AS total_pause_min
-                FROM reproceso_pausas
-                GROUP BY proceso_id
-            )
-        """
-
-        op_coro = conn.fetchrow(f"""
+        op_row = await conn.fetchrow(f"""
             {_PAUSE_CTE}
             SELECT
                 COUNT(*) AS total,
@@ -521,7 +581,7 @@ async def get_operator_kpis(user_id: int) -> dict:
             WHERE p.operario_id = $1
         """, user_id)
 
-        global_coro = conn.fetchval(f"""
+        global_avg = await conn.fetchval(f"""
             {_PAUSE_CTE}
             SELECT AVG(
                 EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60
@@ -532,7 +592,7 @@ async def get_operator_kpis(user_id: int) -> dict:
             WHERE p.estado = 'FINALIZADO'
         """)
 
-        sku_coro = conn.fetch("""
+        sku_rows = await conn.fetch("""
             SELECT sku_destino, COUNT(*) AS count
             FROM reproceso_procesos
             WHERE operario_id = $1
@@ -540,9 +600,40 @@ async def get_operator_kpis(user_id: int) -> dict:
             ORDER BY count DESC
         """, user_id)
 
-        op_row, global_avg, sku_rows = await asyncio.gather(op_coro, global_coro, sku_coro)
+    op_stats = dict(op_row)
+    op_stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
+    op_stats["skus"] = [dict(r) for r in sku_rows]
+    return op_stats
 
-        op_stats = dict(op_row)
-        op_stats["global_avg_minutes"] = float(global_avg) if global_avg else 0.0
-        op_stats["skus"] = [dict(r) for r in sku_rows]
-        return op_stats
+
+# ─── Config de Pausas Obligatorias ───────────
+
+async def get_break_config() -> dict:
+    """Retorna la configuración de pausas obligatorias."""
+    async with get_conn() as conn:
+        rows = await conn.fetch("SELECT key, value FROM reproceso_config")
+        cfg = {r["key"]: r["value"] for r in rows}
+    return {
+        "enabled":       cfg.get("break_enabled", "false") == "true",
+        "work_minutes":  int(cfg.get("break_work_minutes", "90")),
+        "rest_minutes":  int(cfg.get("break_rest_minutes", "10")),
+    }
+
+
+async def set_break_config(enabled: bool, work_minutes: int, rest_minutes: int) -> dict:
+    """Actualiza la configuración de pausas obligatorias."""
+    async with get_conn() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE reproceso_config SET value=$1 WHERE key='break_enabled'",
+                "true" if enabled else "false"
+            )
+            await conn.execute(
+                "UPDATE reproceso_config SET value=$1 WHERE key='break_work_minutes'",
+                str(work_minutes)
+            )
+            await conn.execute(
+                "UPDATE reproceso_config SET value=$1 WHERE key='break_rest_minutes'",
+                str(rest_minutes)
+            )
+    return {"enabled": enabled, "work_minutes": work_minutes, "rest_minutes": rest_minutes}

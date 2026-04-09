@@ -34,6 +34,7 @@ const SKU_NAMES = {
 const Charts = {
     efficiency: null,
     skuDistro: null,
+    skuHours: null,
 
     destroy(id) {
         if (this[id]) {
@@ -45,5 +46,6 @@ const Charts = {
     destroyAll() {
         this.destroy('efficiency');
         this.destroy('skuDistro');
+        this.destroy('skuHours');
     }
 };

@@ -178,6 +178,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """Versión async de verify_password — corre bcrypt en un thread pool
+    para no bloquear el event loop de FastAPI durante el hash (~200-500ms)."""
+    if not hashed_password:
+        return False
+    import asyncio
+    return await asyncio.to_thread(pwd_context.verify, plain_password, hashed_password)
+
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -206,5 +215,32 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         if username is None:
             raise credentials_exception
         return username
+    except JWTError:
+        raise credentials_exception
+
+
+async def get_current_user_with_role(token: str = Depends(oauth2_scheme)) -> dict:
+    """Dependencia FastAPI: extrae usuario y rol desde el JWT.
+    Tokens nuevos incluyen 'rol' directamente (sin DB).
+    Tokens viejos (sin 'rol') hacen fallback a DB para compatibilidad."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudo validar las credenciales. Inicie sesión nuevamente.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+
+        rol: str = payload.get("rol", "")
+        if not rol:
+            # Token antiguo sin campo 'rol' — consultar DB una sola vez
+            from db import get_usuario_por_nombre
+            user = await get_usuario_por_nombre(username)
+            rol = user["rol"] if user else ""
+
+        return {"nombre": username, "rol": rol}
     except JWTError:
         raise credentials_exception

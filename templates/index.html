@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PRD+ Demo | Consolidación SKU</title>
-    <link rel="stylesheet" href="/static/css/base.css?v=6">
-    <link rel="stylesheet" href="/static/css/layout.css?v=6">
-    <link rel="stylesheet" href="/static/css/login.css?v=6">
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=6">
+    <link rel="stylesheet" href="/static/css/base.css?v=7">
+    <link rel="stylesheet" href="/static/css/layout.css?v=7">
+    <link rel="stylesheet" href="/static/css/login.css?v=7">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=7">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -298,6 +298,52 @@
                         <tbody id="performance-table-body"></tbody>
                     </table>
                 </div>
+
+                <!-- SKU Human Resources Section -->
+                <div class="sku-hr-section mt-2">
+                    <div class="section-title-row">
+                        <h2>Recurso Humano por SKU</h2>
+                        <p class="subtitle">Horas-hombre efectivas invertidas por producto (procesos finalizados)</p>
+                    </div>
+
+                    <!-- SKU Hours Chart -->
+                    <div class="card mt-2">
+                        <div class="card-header">
+                            <h3>Horas-Hombre por SKU</h3>
+                            <p class="subtitle">Total acumulado de tiempo efectivo por producto</p>
+                        </div>
+                        <div class="canvas-wrapper" style="height:320px">
+                            <canvas id="chart-sku-hours"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- SKU Detail Table -->
+                    <div class="card mt-2">
+                        <div class="card-header">
+                            <h3>Detalle por SKU</h3>
+                        </div>
+                        <div id="sku-stats-empty" class="empty-state hidden">
+                            <p>No hay procesos finalizados aún para calcular el recurso humano.</p>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="sku-stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>PRODUCTO</th>
+                                        <th>PROCESOS</th>
+                                        <th>OPERARIOS</th>
+                                        <th>TOTAL HORAS-HOMBRE</th>
+                                        <th>PROMEDIO/PROCESO</th>
+                                        <th>MÍN / MÁX</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sku-stats-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </section>
 
@@ -335,6 +381,69 @@
                             <!-- Populated by JS -->
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Break Config Panel -->
+            <div class="card break-config-card mt-2">
+                <div class="card-header">
+                    <div class="break-config-title-row">
+                        <div>
+                            <h3>Pausas Obligatorias</h3>
+                            <p class="subtitle">Fuerza una pausa de descanso después de cierto tiempo de trabajo continuo</p>
+                        </div>
+                        <label class="toggle-switch" title="Activar/desactivar pausas obligatorias">
+                            <input type="checkbox" id="break-enabled-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="break-config-fields" class="break-config-fields">
+                    <div class="break-config-grid">
+                        <div class="break-config-item">
+                            <label for="break-work-minutes">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                Trabajar durante
+                            </label>
+                            <div class="input-number-row">
+                                <input type="number" id="break-work-minutes" min="5" max="480" value="90" class="form-control input-number">
+                                <span class="input-unit">min</span>
+                            </div>
+                            <p class="input-hint">Tiempo de trabajo continuo antes de forzar pausa</p>
+                        </div>
+
+                        <div class="break-config-arrow">→</div>
+
+                        <div class="break-config-item">
+                            <label for="break-rest-minutes">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
+                                </svg>
+                                Descanso de
+                            </label>
+                            <div class="input-number-row">
+                                <input type="number" id="break-rest-minutes" min="1" max="60" value="10" class="form-control input-number">
+                                <span class="input-unit">min</span>
+                            </div>
+                            <p class="input-hint">Duración mínima de la pausa obligatoria</p>
+                        </div>
+                    </div>
+
+                    <div class="break-config-preview">
+                        <span id="break-config-preview-text">Cada 90 min de trabajo → 10 min de descanso obligatorio</span>
+                    </div>
+                </div>
+
+                <div class="break-config-actions">
+                    <button id="btn-save-break-config" class="btn btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                        </svg>
+                        Guardar Configuración
+                    </button>
                 </div>
             </div>
         </section>
@@ -470,11 +579,34 @@
         </div>
     </div>
 
-    <script src="/static/js/constants.js?v=6"></script>
-    <script src="/static/js/api.js?v=6"></script>
-    <script src="/static/js/store.js?v=6"></script>
-    <script src="/static/js/ui.js?v=6"></script>
-    <script src="/static/js/app.js?v=6"></script>
+    <!-- Modal: Pausa Obligatoria (no tiene botón cancelar) -->
+    <div id="break-modal-overlay" class="modal-overlay hidden">
+        <div class="modal-card break-modal-card">
+            <div class="break-modal-icon">☕</div>
+            <h2>Pausa Obligatoria</h2>
+            <p id="break-modal-message">Has trabajado 90 minutos continuos. Tómate un descanso.</p>
+            <div class="break-countdown-wrapper">
+                <svg class="break-countdown-ring" viewBox="0 0 100 100">
+                    <circle class="break-ring-bg" cx="50" cy="50" r="44"/>
+                    <circle class="break-ring-progress" id="break-ring-progress" cx="50" cy="50" r="44"/>
+                </svg>
+                <div class="break-countdown-center">
+                    <span id="break-countdown-display">10:00</span>
+                    <span class="break-countdown-label">restantes</span>
+                </div>
+            </div>
+            <button id="break-btn-resume" class="btn btn-primary btn-block" disabled>
+                Reanudar Trabajo
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/js/constants.js?v=7"></script>
+    <script src="/static/js/api.js?v=7"></script>
+    <script src="/static/js/store.js?v=7"></script>
+    <script src="/static/js/ui.js?v=7"></script>
+    <script src="/static/js/break-monitor.js?v=7"></script>
+    <script src="/static/js/app.js?v=7"></script>
 </body>
 
 </html>

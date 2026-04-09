@@ -150,6 +150,23 @@ const Store = {
         return await API.get(`/api/dashboard/operator/${userId}`);
     },
 
+    async loadSKUStats() {
+        const data = await API.get('/api/sku-stats');
+        return data.sku_stats || [];
+    },
+
+    async loadBreakConfig() {
+        return await API.get('/api/break-config');
+    },
+
+    async saveBreakConfig(enabled, workMinutes, restMinutes) {
+        return await API.put('/api/break-config', {
+            enabled,
+            work_minutes: workMinutes,
+            rest_minutes: restMinutes
+        });
+    },
+
     getSortedProcesses() {
         const statusWeight = {
             [ProcessState.STARTED]: 4,

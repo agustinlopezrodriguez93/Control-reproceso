@@ -106,6 +106,7 @@ const UI = {
             this.renderDetail(contextId);
         } else if (viewId === 'view-users') {
             this.renderUsers();
+            app.loadBreakConfig();
         } else if (viewId === 'view-audit') {
             this.renderAudit();
         } else if (viewId === 'view-performance') {
@@ -399,10 +400,10 @@ const UI = {
                 </td>
             `;
 
-            // Adjuntar listener en lugar de inline onclick (evita XSS con IDs no UUID)
+            // Pasar el proceso preloaded del store — evita fetch extra al abrir detalle
             const btn = tr.querySelector('[data-proc-id]');
             if (btn) {
-                btn.addEventListener('click', () => app.viewDetail(proc.id));
+                btn.addEventListener('click', () => app.viewDetailPreloaded(proc));
             }
 
             tbody.appendChild(tr);
@@ -413,7 +414,9 @@ const UI = {
     // ─── Detail View ──────────────────────────────
 
     async renderDetail(processId, preloadedData = null) {
-        const proc = preloadedData || await Store.loadProcess(processId);
+        // Buscar primero en el store local para evitar fetch cuando ya tenemos el dato
+        const cached = Store.state.processes.find(p => p.id === processId);
+        const proc = preloadedData || cached || await Store.loadProcess(processId);
         if (!proc) {
             UI.showSnackbar('Proceso no encontrado', 'error');
             return;
@@ -569,6 +572,14 @@ const UI = {
         } catch (err) {
             console.error("Dashboard error:", err);
             this.showSnackbar('Error cargando indicadores', 'error');
+            return;
+        }
+
+        // Sección SKU separada del try/catch principal para no bloquear los KPIs globales
+        try {
+            await this.renderSKUHumanResources();
+        } catch (err) {
+            console.warn('SKU stats no disponibles:', err);
         }
     },
 
@@ -666,6 +677,214 @@ const UI = {
             console.error("Error loading operator KPIs:", err);
             UI.showSnackbar('Error cargando KPIs del operario', 'error');
         }
+    },
+
+    // ─── SKU Human Resources ─────────────────────
+
+    async renderSKUHumanResources() {
+        const tbody = document.getElementById('sku-stats-body');
+        const emptyState = document.getElementById('sku-stats-empty');
+        const table = document.getElementById('sku-stats-table');
+        if (!tbody) return;
+
+        let stats;
+        try {
+            stats = await Store.loadSKUStats();
+        } catch (err) {
+            console.error('Error loading SKU stats:', err);
+            return;
+        }
+
+        tbody.innerHTML = '';
+
+        if (!stats || stats.length === 0) {
+            if (emptyState) emptyState.classList.remove('hidden');
+            if (table) table.classList.add('hidden');
+            Charts.destroy('skuHours');
+            return;
+        }
+
+        if (emptyState) emptyState.classList.add('hidden');
+        if (table) table.classList.remove('hidden');
+
+        // Hallar el máximo de horas para la barra de proporción
+        const maxHoras = Math.max(...stats.map(s => parseFloat(s.total_horas_hombre) || 0));
+
+        stats.forEach(s => {
+            const tr = document.createElement('tr');
+            const sku = s.sku_destino;
+            const nombre = SKU_NAMES[sku] || sku;
+            const horas = parseFloat(s.total_horas_hombre) || 0;
+            const pct = maxHoras > 0 ? Math.round((horas / maxHoras) * 100) : 0;
+            const promedio = s.promedio_minutos != null ? `${s.promedio_minutos} min` : '-';
+            const minMax = (s.minimo_minutos != null && s.maximo_minutos != null)
+                ? `${s.minimo_minutos} / ${s.maximo_minutos} min`
+                : '-';
+
+            tr.innerHTML = `
+                <td><span class="sku-code-badge">${sku}</span></td>
+                <td>${nombre}</td>
+                <td>${s.total_procesos}</td>
+                <td>${s.total_operarios}</td>
+                <td>
+                    <div class="sku-hr-bar-cell">
+                        <div class="sku-hr-bar-wrap">
+                            <div class="sku-hr-bar" style="width:${pct}%"></div>
+                        </div>
+                        <span class="sku-hr-value">${horas} h</span>
+                    </div>
+                </td>
+                <td>${promedio}</td>
+                <td class="text-secondary">${minMax}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // Gráfico de barras horizontales
+        Charts.destroy('skuHours');
+        const ctx = document.getElementById('chart-sku-hours').getContext('2d');
+        Charts.skuHours = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stats.map(s => s.sku_destino),
+                datasets: [
+                    {
+                        label: 'Horas-Hombre Totales',
+                        data: stats.map(s => parseFloat(s.total_horas_hombre) || 0),
+                        backgroundColor: 'rgba(99, 102, 241, 0.7)',
+                        borderRadius: 6,
+                    },
+                    {
+                        label: 'Promedio por Proceso (min)',
+                        data: stats.map(s => parseFloat(s.promedio_minutos) || 0),
+                        backgroundColor: 'rgba(168, 85, 247, 0.5)',
+                        borderRadius: 6,
+                        yAxisID: 'y2',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#f8fafc', font: { size: 11 } }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Horas-Hombre', color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    y2: {
+                        beginAtZero: true,
+                        position: 'right',
+                        title: { display: true, text: 'Minutos/Proceso', color: '#94a3b8' },
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#94a3b8', font: { size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            afterBody(items) {
+                                const idx = items[0]?.dataIndex;
+                                if (idx == null) return '';
+                                const s = stats[idx];
+                                return [
+                                    `Procesos: ${s.total_procesos}`,
+                                    `Operarios: ${s.total_operarios}`,
+                                    `Mín: ${s.minimo_minutos} min  Máx: ${s.maximo_minutos} min`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    },
+
+    // ─── Break Config UI (Maestro) ────────────────
+
+    updateBreakConfigUI(enabled) {
+        const fields = document.getElementById('break-config-fields');
+        if (fields) fields.classList.toggle('disabled', !enabled);
+    },
+
+    updateBreakPreview() {
+        const workInput = document.getElementById('break-work-minutes');
+        const restInput = document.getElementById('break-rest-minutes');
+        const preview = document.getElementById('break-config-preview-text');
+        if (!preview || !workInput || !restInput) return;
+        const w = parseInt(workInput.value) || 90;
+        const r = parseInt(restInput.value) || 10;
+        preview.textContent = `Cada ${w} min de trabajo → ${r} min de descanso obligatorio`;
+    },
+
+    // ─── Break Modal (Operario) ───────────────────
+
+    /**
+     * Muestra el modal de pausa obligatoria con un countdown regresivo.
+     * Bloquea la pantalla hasta que pasen restMinutes.
+     * Llama onDone() cuando el tiempo se cumple (para reanudar el proceso).
+     */
+    showBreakModal(workMinutes, restMinutes, onDone) {
+        const overlay = document.getElementById('break-modal-overlay');
+        const display = document.getElementById('break-countdown-display');
+        const ring = document.getElementById('break-ring-progress');
+        const btn = document.getElementById('break-btn-resume');
+        const msg = document.getElementById('break-modal-message');
+
+        const CIRCUMFERENCE = 2 * Math.PI * 44; // 276.46
+
+        msg.textContent = `Llevás ${workMinutes} minutos trabajando. Tomá un descanso de ${restMinutes} minutos.`;
+        btn.disabled = true;
+        btn.textContent = 'Reanudar Trabajo';
+        ring.classList.remove('done');
+        ring.style.strokeDashoffset = '0';
+        overlay.classList.remove('hidden');
+
+        let totalSeconds = restMinutes * 60;
+        let remaining = totalSeconds;
+
+        const fmt = (s) => {
+            const m = Math.floor(s / 60).toString().padStart(2, '0');
+            const sec = (s % 60).toString().padStart(2, '0');
+            return `${m}:${sec}`;
+        };
+
+        display.textContent = fmt(remaining);
+
+        const tick = setInterval(() => {
+            remaining--;
+            display.textContent = fmt(remaining);
+
+            // Anillo: va de lleno (0) a vacío (CIRCUMFERENCE) a medida que pasa el tiempo
+            const progress = (totalSeconds - remaining) / totalSeconds;
+            ring.style.strokeDashoffset = (CIRCUMFERENCE * progress).toFixed(2);
+
+            if (remaining <= 0) {
+                clearInterval(tick);
+                ring.classList.add('done');
+                display.textContent = '00:00';
+                btn.disabled = false;
+                this.showSnackbar('Descanso completado — podés reanudar', 'success');
+            }
+        }, 1000);
+
+        // Limpiar el listener anterior antes de asignar uno nuevo
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', () => {
+            clearInterval(tick);
+            overlay.classList.add('hidden');
+            onDone();
+        });
     },
 
     // ─── Users Management ─────────────────────────
@@ -800,5 +1019,19 @@ const UI = {
         // User Management Actions
         const btnAddUser = document.getElementById('btn-add-user');
         if (btnAddUser) btnAddUser.onclick = () => app.handleAddUser();
+
+        // Break Config
+        const breakToggle = document.getElementById('break-enabled-toggle');
+        if (breakToggle) breakToggle.addEventListener('change', (e) => {
+            UI.updateBreakConfigUI(e.target.checked);
+        });
+
+        const breakWorkInput = document.getElementById('break-work-minutes');
+        const breakRestInput = document.getElementById('break-rest-minutes');
+        if (breakWorkInput) breakWorkInput.addEventListener('input', () => UI.updateBreakPreview());
+        if (breakRestInput) breakRestInput.addEventListener('input', () => UI.updateBreakPreview());
+
+        const btnSaveBreak = document.getElementById('btn-save-break-config');
+        if (btnSaveBreak) btnSaveBreak.onclick = () => app.saveBreakConfig();
     }
 };
