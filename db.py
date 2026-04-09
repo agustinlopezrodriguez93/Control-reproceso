@@ -15,6 +15,9 @@ load_dotenv()
 DATABASE_URL = os.getenv('DATABASE_URL')
 if not DATABASE_URL:
     raise ValueError("Falta la variable de entorno DATABASE_URL")
+# Railway a veces entrega postgres:// — asyncpg requiere postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 logger = logging.getLogger("reproceso.db")
 

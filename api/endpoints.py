@@ -98,13 +98,19 @@ async def require_maestro(token_data: dict = Depends(get_current_user_with_role)
 async def api_public_users():
     """Lista usuarios para el picker de login. Sin autenticación.
     Cacheado en memoria por 60s — los usuarios cambian raramente."""
+    import logging
+    _log = logging.getLogger("reproceso.users-public")
     now = _time.monotonic()
     if _public_users_cache["data"] is None or now - _public_users_cache["ts"] > _PUBLIC_USERS_TTL:
-        usuarios = await get_usuarios()
-        _public_users_cache["data"] = [
-            {"nombre": u["nombre"], "avatar": u["avatar"], "rol": u["rol"]} for u in usuarios
-        ]
-        _public_users_cache["ts"] = now
+        try:
+            usuarios = await get_usuarios()
+            _public_users_cache["data"] = [
+                {"nombre": u["nombre"], "avatar": u["avatar"], "rol": u["rol"]} for u in usuarios
+            ]
+            _public_users_cache["ts"] = now
+        except Exception as e:
+            _log.error(f"[users-public] Error al obtener usuarios: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Error de base de datos: {str(e)}")
     return {"users": _public_users_cache["data"]}
 
 
