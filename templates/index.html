@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PRD+ Demo | Consolidación SKU</title>
-    <link rel="stylesheet" href="/static/css/base.css?v=7">
-    <link rel="stylesheet" href="/static/css/layout.css?v=7">
-    <link rel="stylesheet" href="/static/css/login.css?v=7">
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=7">
+    <link rel="stylesheet" href="/static/css/base.css?v=8">
+    <link rel="stylesheet" href="/static/css/layout.css?v=8">
+    <link rel="stylesheet" href="/static/css/login.css?v=8">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=8">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -601,12 +601,17 @@
         </div>
     </div>
 
-    <script src="/static/js/constants.js?v=7"></script>
-    <script src="/static/js/api.js?v=7"></script>
-    <script src="/static/js/store.js?v=7"></script>
-    <script src="/static/js/ui.js?v=7"></script>
-    <script src="/static/js/break-monitor.js?v=7"></script>
-    <script src="/static/js/app.js?v=7"></script>
+    <script src="/static/js/constants.js?v=8"></script>
+    <script src="/static/js/api.js?v=8"></script>
+    <script src="/static/js/store.js?v=8"></script>
+    <!-- Módulos de vistas — deben cargarse antes de ui.js para que UI pueda delegar en ellos -->
+    <script src="/static/js/views/dashboard.js?v=8"></script>
+    <script src="/static/js/views/detail.js?v=8"></script>
+    <script src="/static/js/views/performance.js?v=8"></script>
+    <script src="/static/js/views/users.js?v=8"></script>
+    <script src="/static/js/ui.js?v=8"></script>
+    <script src="/static/js/break-monitor.js?v=8"></script>
+    <script src="/static/js/app.js?v=8"></script>
 </body>
 
 </html>

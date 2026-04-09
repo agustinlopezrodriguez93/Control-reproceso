@@ -6,6 +6,10 @@
 
 const app = {
     async init() {
+        // UI.init() DEBE ir antes de Store.init() para que el DOM esté listo
+        // cuando Store emita 'store:public-users-updated' durante la carga inicial.
+        UI.init();
+
         // Eventos que Store emite para notificar cambios de datos sin depender de UI.
         window.addEventListener('store:skus-updated', () => {
             UI.renderSKUGrid('sku-picker-grid', 'input-sku-dest');
@@ -15,7 +19,7 @@ const app = {
         });
 
         const loggedIn = await Store.init();
-        UI.init();
+
         if (loggedIn) {
             UI.navigateTo('view-dashboard');
             // Iniciar monitor de pausas solo para operarios
@@ -24,6 +28,10 @@ const app = {
             }
         } else {
             UI.navigateTo('view-login');
+            // Renderizar usuarios cargados por Store.init() en caso de que ya estén disponibles
+            if (Store.state.publicUsers.length > 0) {
+                UI.renderUserPicker();
+            }
         }
     },
 
@@ -49,10 +57,22 @@ const app = {
     },
 
     logout() {
+        // Detener el monitor de pausas antes de limpiar el estado
+        BreakMonitor.stop();
+
         localStorage.removeItem('reproceso_token');
         Store.state.currentUser = null;
         Store.state.currentRole = null;
+        Store.state.processes = [];
+        Store.state.publicUsers = [];
+
         UI.navigateTo('view-login');
+
+        // Cargar usuarios frescos para la pantalla de login
+        API.get('/api/users-public').then(data => {
+            Store.state.publicUsers = data.users || [];
+            UI.renderUserPicker();
+        }).catch(err => console.error('Error cargando usuarios en logout:', err));
     },
 
     // ─── Navegación ───────────────────────────────

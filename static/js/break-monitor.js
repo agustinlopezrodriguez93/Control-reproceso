@@ -138,5 +138,14 @@ const BreakMonitor = (() => {
         }
     }
 
-    return { init, reload };
+    function stop() {
+        if (_intervalId) {
+            clearInterval(_intervalId);
+            _intervalId = null;
+        }
+        _breakActive = false;
+        _lastNotifiedProcessId = null;
+    }
+
+    return { init, reload, stop };
 })();
