@@ -476,8 +476,8 @@ async def get_performance() -> list[dict]:
 
 async def get_dashboard_stats() -> dict:
     """3 queries secuenciales sobre la misma conexión del pool.
-    asyncpg no soporta múltiples queries en paralelo sobre una sola conexión —
-    asyncio.gather() con la misma conn causa 'connection is borrowed' en producción."""
+    IMPORTANTE: asyncpg no soporta múltiples queries en paralelo sobre una sola conexión.
+    NO usar asyncio.gather() aquí — causa 'another operation is in progress' en producción."""
     async with get_conn() as conn:
         counts = await conn.fetchrow("""
             SELECT
