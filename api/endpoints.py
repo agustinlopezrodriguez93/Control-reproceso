@@ -275,7 +275,13 @@ async def api_performance(maestro=Depends(require_maestro)):
 @router.get("/dashboard/kpis")
 async def api_dashboard_kpis(maestro=Depends(require_maestro)):
     """KPIs globales para el dashboard. Solo Maestro."""
-    return await get_dashboard_stats()
+    import logging
+    _log = logging.getLogger("reproceso.kpis")
+    try:
+        return await get_dashboard_stats()
+    except Exception as e:
+        _log.error(f"[dashboard/kpis] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
 @router.get("/dashboard/operator/{user_id}")
