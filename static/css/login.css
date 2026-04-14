@@ -169,18 +169,18 @@
 }
 
 .user-picker-section {
-    margin-bottom: 2rem;
+    margin-bottom: 1.25rem;
     text-align: left;
 }
 
 .user-picker-section-title {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 700;
     color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    margin-bottom: 1.25rem;
-    padding-left: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding-left: 0.25rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -195,35 +195,43 @@
 
 .user-picker-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 1.25rem;
-    padding: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 0.65rem;
+    padding: 0.25rem;
 }
 
 .user-card-picker {
     cursor: pointer;
     text-align: center;
-    padding: 1.25rem 1rem;
-    border-radius: 20px;
+    padding: 0.85rem 0.5rem;
+    border-radius: 14px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
     position: relative;
     overflow: hidden;
     width: 100%;
-    min-width: 100px;
+    min-width: 70px;
+    -webkit-tap-highlight-color: rgba(99, 102, 241, 0.2);
+    touch-action: manipulation;
 }
 
 .user-card-picker:hover {
-    background: rgba(99, 102, 241, 0.1);
-    transform: translateY(-8px);
+    background: rgba(99, 102, 241, 0.12);
+    transform: translateY(-4px);
     border-color: rgba(168, 85, 247, 0.5);
-    box-shadow: 0 15px 30px -10px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 10px 20px -8px rgba(99, 102, 241, 0.4);
+}
+
+.user-card-picker:active {
+    transform: scale(0.96);
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(168, 85, 247, 0.7);
 }
 
 .user-card-picker::before {
@@ -243,48 +251,49 @@
 }
 
 .user-card-picker .avatar-lg {
-    width: 64px !important;
-    height: 64px !important;
-    min-width: 64px;
-    min-height: 64px;
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px;
+    min-height: 48px;
     margin: 0 auto;
-    font-size: 1.5rem;
-    border-radius: 18px;
+    font-size: 1.15rem;
+    border-radius: 12px;
     background: linear-gradient(135deg, #6366f1, #a855f7);
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 800;
     color: white;
-    box-shadow: 0 8px 16px -4px rgba(99, 102, 241, 0.4);
-    transition: transform 0.3s;
+    box-shadow: 0 6px 12px -4px rgba(99, 102, 241, 0.35);
+    transition: transform 0.25s;
     flex-shrink: 0;
 }
 
 .user-card-picker:hover .avatar-lg {
-    transform: scale(1.1) rotate(5deg);
+    transform: scale(1.08) rotate(3deg);
 }
 
 .user-card-picker .user-name {
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.72rem;
     color: white;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
+    line-height: 1.2;
 }
 
 /* Search Box */
 .user-picker-controls {
-    margin-bottom: 2rem;
+    margin-bottom: 1.25rem;
 }
 
 .search-box {
     position: relative;
     display: flex;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 
 .search-box svg {
@@ -325,25 +334,38 @@
     font-size: 0.95rem;
 }
 
+/* ─── Touch-Optimized Scrollbar ────────────── */
+
 .user-picker-sections {
-    max-height: 400px;
+    max-height: 420px;
     overflow-y: auto;
-    padding-right: 0.5rem;
+    padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: auto;
+    scrollbar-color: rgba(99, 102, 241, 0.5) rgba(15, 23, 42, 0.4);
 }
 
 .user-picker-sections::-webkit-scrollbar {
-    width: 6px;
+    width: 14px;
 }
 
 .user-picker-sections::-webkit-scrollbar-track {
-    background: transparent;
+    background: rgba(15, 23, 42, 0.4);
+    border-radius: 8px;
+    border: 2px solid transparent;
 }
 
 .user-picker-sections::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    background: linear-gradient(180deg, #6366f1, #a855f7);
+    border-radius: 8px;
+    border: 3px solid rgba(15, 23, 42, 0.4);
+    min-height: 50px;
 }
 
 .user-picker-sections::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(180deg, #818cf8, #c084fc);
+}
+
+.user-picker-sections::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, #4f46e5, #9333ea);
 }
