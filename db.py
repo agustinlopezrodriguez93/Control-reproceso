@@ -15,9 +15,17 @@ load_dotenv()
 DATABASE_URL = os.getenv('DATABASE_URL')
 if not DATABASE_URL:
     raise ValueError("Falta la variable de entorno DATABASE_URL")
-# Railway a veces entrega postgres:// — asyncpg requiere postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Extraer el password crudo de la URL para evitar que asyncpg lo corrompa por 
+# culpa del urllib.parse.unquote (ej. si Railway generó un password con '%')
+raw_password = None
+if "://" in DATABASE_URL and "@" in DATABASE_URL:
+    body = DATABASE_URL.split("://", 1)[1]
+    user_pass = body.split("@", 1)[0]
+    if ":" in user_pass:
+        raw_password = user_pass.split(":", 1)[1]
 
 logger = logging.getLogger("reproceso.db")
 
@@ -39,6 +47,7 @@ async def _get_pool() -> asyncpg.Pool:
     if _pool is None:
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
+            password=raw_password,
             min_size=2,
             max_size=10,
             ssl=_ssl_ctx,
