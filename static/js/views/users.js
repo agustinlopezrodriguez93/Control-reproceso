@@ -5,33 +5,46 @@
 
 const ViewUsers = {
     async render() {
-        const tbody = document.getElementById('users-table-body');
-        if (!tbody) return;
+        const grid = document.getElementById('users-grid');
+        if (!grid) return;
         const users = await Store.loadUsers();
-        tbody.innerHTML = '';
+        grid.innerHTML = '';
+        
         users.forEach(u => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${u.nombre}</td>
-                <td>${u.rol}</td>
-                <td><div class="avatar-sm">${u.avatar}</div></td>
-                <td>
-                    ${u.rol !== 'Maestro' ? `
+            const card = document.createElement('div');
+            card.className = 'user-card';
+            card.innerHTML = `
+                <div class="user-card-badge">${u.rol}</div>
+                <div class="user-card-header">
+                    <div class="user-card-avatar">${u.avatar}</div>
+                </div>
+                <div class="user-card-info">
+                    <h3 class="user-card-name">${u.nombre}</h3>
+                    <div class="user-card-meta">
+                        <span class="status-indicator active"></span>
+                        <span class="status-text">Conectado</span>
+                    </div>
+                </div>
+                ${u.rol !== 'Maestro' ? `
+                <div class="user-card-actions">
                     <button class="btn btn-ghost btn-sm text-danger" data-delete-user="${u.id}" data-user-name="${u.nombre}">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
                         Eliminar
                     </button>
-                    ` : ''}
-                </td>
+                </div>
+                ` : '<div class="user-card-actions"><span class="badge badge-neutral">Administrador</span></div>'}
             `;
 
-            const deleteBtn = tr.querySelector('[data-delete-user]');
+            const deleteBtn = card.querySelector('[data-delete-user]');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', () => {
                     app.handleDeleteUser(u.id, u.nombre);
                 });
             }
 
-            tbody.appendChild(tr);
+            grid.appendChild(card);
         });
     },
 
