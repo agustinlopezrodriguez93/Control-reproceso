@@ -1,0 +1,99 @@
+<h2>Diseño Optimizado para Pantallas Táctiles</h2>
+<p class="subtitle">Enfoque: Máxima densidad para evitar scroll y facilitar el toque.</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">A. Máxima Densidad (Sin Scroll)</div>
+    <div class="mockup-body" style="background: #0f172a; padding: 1.5rem; min-height: 400px; display: flex; flex-direction: column;">
+      
+      <!-- Buscador grande para dedos -->
+      <div style="background: rgba(255,255,255,0.05); padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem;">
+        <span style="font-size: 1.2rem;">🔍</span>
+        <span style="color: #64748b; font-size: 0.9rem;">Buscar operario...</span>
+      </div>
+
+      <!-- Grid muy denso -->
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; flex: 1;">
+        
+        <!-- Repetir tarjetas pequeñas -->
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center; cursor: pointer;">
+          <div style="width: 40px; height: 40px; background: #6366f1; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">AD</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Admin</div>
+        </div>
+        
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #10b981; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U1</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 1</div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #3b82f6; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U2</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 2</div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #f59e0b; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U3</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 3</div>
+        </div>
+
+        <!-- Fila 2 -->
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #ec4899; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U4</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 4</div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #8b5cf6; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U5</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 5</div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #f97316; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U6</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 6</div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 8px; text-align: center;">
+          <div style="width: 40px; height: 40px; background: #2dd4bf; border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">U7</div>
+          <div style="color: white; font-size: 0.75rem; font-weight: 600;">Usuario 7</div>
+        </div>
+
+      </div>
+
+      <div style="margin-top: 1.5rem; text-align: center; color: #64748b; font-size: 0.7rem;">
+        Mostrando 8 de 32 operarios
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">B. Mejoras de Accesibilidad Táctil</div>
+    <div class="mockup-body" style="background: #0f172a; padding: 1.5rem; min-height: 400px; overflow-y: scroll;">
+       <h3 style="color: white; margin-bottom: 1rem;">Scroll Táctil Visible</h3>
+       <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 2rem;">Si la lista es muy larga, estilizaremos la barra para que sea fácil de ver y arrastrar.</p>
+       
+       <div style="width: 8px; background: #334155; border-radius: 4px; height: 100px; margin-left: auto;">
+         <div style="background: #6366f1; height: 40px; border-radius: 4px;"></div>
+       </div>
+
+       <div style="margin-top: 2rem;">
+         <h4 style="color: white;">Filtros de Acceso Rápido</h4>
+         <div style="display: flex; gap: 8px; margin-top: 10px;">
+           <span style="background: #6366f1; color: white; padding: 8px 16px; border-radius: 8px; font-weight: bold;">Todos</span>
+           <span style="background: #1e293b; color: #94a3b8; padding: 8px 16px; border-radius: 8px; font-weight: bold;">A-M</span>
+           <span style="background: #1e293b; color: #94a3b8; padding: 8px 16px; border-radius: 8px; font-weight: bold;">N-Z</span>
+         </div>
+       </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons" style="margin-top: 2rem;">
+  <div class="pros">
+    <h4>Propuesta Táctil</h4>
+    <ul>
+      <li><strong>Tarjetas Compactas</strong>: Permiten hasta 16-20 operarios en una sola pantalla.</li>
+      <li><strong>Barra de Scroll Gruesa</strong>: Estilizada con CSS para que no "desaparezca".</li>
+      <li><strong>Targets de 60px+</strong>: Aseguran que cada toque sea preciso.</li>
+    </ul>
+  </div>
+</div>

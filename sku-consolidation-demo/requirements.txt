@@ -1,0 +1,48 @@
+# Control Reproceso SKU — dependencias mínimas
+# Auditado: 2026-04-09
+# Migrado: psycopg2-binary → asyncpg (driver async, no bloquea el event loop)
+# Añadido: redis (rate limiting distribuido, opcional — requiere REDIS_URL en .env)
+# Eliminados: flask, flask-cors, selenium, webdriver-manager, openai, PyMuPDF,
+#             pandas, openpyxl, xlrd, numpy, httpx, tqdm, blinker, itsdangerous,
+#             Werkzeug, distro, jiter, outcome, PySocks, trio, trio-websocket,
+#             websocket-client, wsproto, requests
+
+# ── Core API ──────────────────────────────────
+fastapi==0.135.2
+uvicorn==0.42.0
+starlette==1.0.0
+python-multipart==0.0.22
+aiofiles==25.1.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+
+# ── Base de datos ─────────────────────────────
+asyncpg==0.30.0
+
+# ── Autenticación ─────────────────────────────
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==4.0.1
+cryptography==46.0.6
+
+# ── Rate limiting distribuido (opcional) ──────
+# Requiere REDIS_URL en .env. Si no se configura, el sistema usa
+# implementación en memoria automáticamente (modo single-instance).
+redis==5.2.1
+
+# ── Validación y utilidades ───────────────────
+pydantic==2.12.5
+pydantic_core==2.41.5
+python-dotenv==1.2.2
+annotated-types==0.7.0
+typing_extensions==4.15.0
+
+# ── HTTP client (Laudus ERP) ──────────────────
+httpx==0.28.1
+
+# ── Async runtime ─────────────────────────────
+anyio==4.13.0
+sniffio==1.3.1
+h11==0.16.0
+click==8.3.1
+colorama==0.4.6

@@ -1,0 +1,74 @@
+<h2>Rediseño de Gestión de Usuarios</h2>
+<p class="subtitle">Selecciona el enfoque que prefieres para las tarjetas de operarios.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Diseño Compacto (Actual mejorado)</h3>
+      <p>Mantiene el foco en el avatar y nombre, con bordes más redondeados y sombras suaves. Ideal para ver muchos usuarios a la vez.</p>
+      <div class="mockup" style="margin-top: 1rem;">
+        <div class="mockup-body" style="padding: 1rem; background: #0f172a; border-radius: 12px;">
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 1.25rem; text-align: center; width: 140px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 50%; margin: 0 auto 0.75rem; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">JD</div>
+            <div style="font-weight: 700; color: white; font-size: 0.9rem;">Juan Doe</div>
+            <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem;">Operario</div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 8px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e;"></span>
+              <span style="font-size: 0.65rem; color: #94a3b8;">Activo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Tarjeta Informativa (Premium)</h3>
+      <p>Incluye estadísticas rápidas (KPIs) en la misma tarjeta. Diseño con profundidad (glassmorphism) y mayor jerarquía visual.</p>
+      <div class="mockup" style="margin-top: 1rem;">
+        <div class="mockup-body" style="padding: 1rem; background: #0f172a; border-radius: 12px;">
+          <div style="background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 1.5rem; width: 200px; margin: 0 auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+               <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 1.2rem; transform: rotate(-3deg); box-shadow: 0 8px 16px rgba(99,102,241,0.3);">JD</div>
+               <span style="background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 99px; color: #94a3b8; font-size: 0.6rem; font-weight: 700;">#012</span>
+             </div>
+             <div style="font-weight: 700; color: white; font-size: 1.1rem;">Juan Doe</div>
+             <div style="font-size: 0.75rem; color: #6366f1; font-weight: 600; margin-bottom: 1rem;">Operario Senior</div>
+             <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.05); margin: 0.75rem 0;">
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+               <div>
+                 <div style="font-size: 0.6rem; color: #64748b; text-transform: uppercase;">Tareas</div>
+                 <div style="font-weight: 700; color: white; font-size: 0.9rem;">24</div>
+               </div>
+               <div>
+                 <div style="font-size: 0.6rem; color: #64748b; text-transform: uppercase;">Promedio</div>
+                 <div style="font-weight: 700; color: #22c55e; font-size: 0.9rem;">12m</div>
+               </div>
+             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons" style="margin-top: 2rem;">
+  <div class="pros">
+    <h4>Beneficios del Cambio</h4>
+    <ul>
+      <li>Mejor legibilidad en pantallas grandes.</li>
+      <li>Acceso inmediato a rendimiento sin entrar a KPIs.</li>
+      <li>Estética profesional alineada con sistemas modernos.</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>Consideraciones</h4>
+    <ul>
+      <li>La opción B ocupa más espacio por tarjeta.</li>
+      <li>Requiere cargar datos de rendimiento en tiempo real.</li>
+    </ul>
+  </div>
+</div>

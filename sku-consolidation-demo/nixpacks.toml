@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python313"]
+
+[phases.install]
+cmds = ["pip install --no-cache-dir -r requirements.txt"]
+
+[phases.build]
+cmds = ["echo 'Build timestamp: 2026-04-09-v2'"]
+
+[start]
+cmd = "python main.py"

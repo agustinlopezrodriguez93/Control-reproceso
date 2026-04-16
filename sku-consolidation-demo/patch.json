@@ -1,0 +1,12 @@
+{
+  "services": {
+    "a08f7416-0dfe-434f-b9ea-5f4766d1caf4": {
+      "source": {
+        "repo": "agustinlopezrodriguez93/Control-reproceso",
+        "branch": "dev",
+        "rootDirectory": null,
+        "checkSuites": false
+      }
+    }
+  }
+}
