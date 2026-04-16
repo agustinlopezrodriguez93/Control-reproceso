@@ -100,16 +100,17 @@ const Store = {
         }
     },
 
-    async createProcess(operario, skuDestino, esUrgente = false) {
+    async createProcess(operario, skuDestino, esUrgente = false, stockInicial = 0) {
         return await API.post('/api/procesos', {
             operario: operario,
             sku_destino: skuDestino,
-            es_urgente: esUrgente
+            es_urgente: esUrgente,
+            stock_inicial: stockInicial
         });
     },
 
-    async updateProcessState(procesoId, accion) {
-        return await API.put(`/api/procesos/${procesoId}`, { accion });
+    async updateProcessState(procesoId, accion, stockFinal = null) {
+        return await API.put(`/api/procesos/${procesoId}`, { accion, stock_final: stockFinal });
     },
 
     async loadPerformance() {

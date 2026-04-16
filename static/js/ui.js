@@ -104,6 +104,8 @@ const UI = {
             ViewPerformance.render();
         } else if (viewId === 'view-stock-panel') {
             ViewStockPanel.render();
+        } else if (viewId === 'view-reports') {
+            ViewReports.render();
         }
     },
 
@@ -164,13 +166,49 @@ const UI = {
         btnCancel.parentNode.replaceChild(newCancel, btnCancel);
 
         newConfirm.addEventListener('click', async () => {
-            await onConfirm();
-            overlay.classList.add('hidden');
+            const result = await onConfirm();
+            if (result !== false) overlay.classList.add('hidden');
         });
 
         newCancel.addEventListener('click', () => {
             overlay.classList.add('hidden');
         });
+    },
+
+    showPrompt(title, msg, type = 'number', onConfirm) {
+        const overlay = document.getElementById('modal-overlay');
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-message').textContent = msg;
+        
+        const body = document.getElementById('modal-body');
+        body.innerHTML = `
+            <div class="form-group" style="margin-top:1rem">
+                <input type="${type}" id="modal-prompt-input" class="form-control" autofocus required>
+            </div>
+        `;
+        overlay.classList.remove('hidden');
+
+        const btnConfirm = document.getElementById('modal-btn-confirm');
+        const btnCancel = document.getElementById('modal-btn-cancel');
+
+        const newConfirm = btnConfirm.cloneNode(true);
+        const newCancel = btnCancel.cloneNode(true);
+        btnConfirm.parentNode.replaceChild(newConfirm, btnConfirm);
+        btnCancel.parentNode.replaceChild(newCancel, btnCancel);
+
+        newConfirm.addEventListener('click', async () => {
+            const val = document.getElementById('modal-prompt-input').value;
+            if (!val && type === 'number') {
+                this.showSnackbar('Debe ingresar un valor', 'error');
+                return;
+            }
+            const result = await onConfirm(val);
+            if (result !== false) overlay.classList.add('hidden');
+        });
+
+        newCancel.addEventListener('click', () => overlay.classList.add('hidden'));
+        
+        setTimeout(() => document.getElementById('modal-prompt-input').focus(), 100);
     },
 
     // ─── SKU Grid ─────────────────────────────────
@@ -495,6 +533,9 @@ const UI = {
 
         const btnStockPanel = document.getElementById('btn-view-stock-panel');
         if (btnStockPanel) btnStockPanel.onclick = () => UI.navigateTo('view-stock-panel');
+
+        const btnReports = document.getElementById('btn-view-reports');
+        if (btnReports) btnReports.onclick = () => UI.navigateTo('view-reports');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 
