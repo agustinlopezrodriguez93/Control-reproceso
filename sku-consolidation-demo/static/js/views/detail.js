@@ -54,6 +54,9 @@ const ViewDetail = {
         document.getElementById('detail-end-time').textContent = proc.finished_at
             ? new Date(proc.finished_at).toLocaleTimeString() : '-';
 
+        document.getElementById('detail-stock-inicial').textContent = proc.stock_inicial ?? '-';
+        document.getElementById('detail-stock-final').textContent = proc.stock_final ?? '-';
+
         const largeStatusBadge = document.getElementById('large-status-badge');
         const labels = {
             [ProcessState.CREATED]: 'En Preparación',
