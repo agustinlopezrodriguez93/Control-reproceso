@@ -155,14 +155,26 @@ const ViewPerformance = {
     },
 
     async loadOperatorKPIs(userId) {
-        try {
-            const kpis = await Store.loadOperatorKPIs(userId);
+        if (!userId) {
+            // Restore default chart if "Comparar Operario..." is selected
+            try {
+                const globalKpis = await Store.loadDashboardStats();
+                this.renderEfficiencyChart(null, globalKpis.global_avg_minutes);
+            } catch (err) {
+                console.error("Error loading global KPIs:", err);
+            }
+            return;
+        }
 
-            const perfItem = Store.state.performanceData.find(p => p.id === userId);
-            const operatorName = perfItem ? perfItem.user : `Operario #${userId}`;
+        try {
+            const userIdNum = parseInt(userId, 10);
+            const kpis = await Store.loadOperatorKPIs(userIdNum);
+
+            const perfItem = Store.state.performanceData.find(p => p.id === userIdNum);
+            const operatorName = perfItem ? perfItem.user : `Operario #${userIdNum}`;
 
             this.renderEfficiencyChart(
-                { id: userId, user: operatorName, avg_minutes: kpis.avg_minutes || 0 },
+                { id: userIdNum, user: operatorName, avg_minutes: kpis.avg_minutes || 0 },
                 kpis.global_avg_minutes
             );
 
