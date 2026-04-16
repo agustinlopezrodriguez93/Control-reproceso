@@ -59,6 +59,81 @@ const ViewReports = {
         } finally {
             UI.showLoading(false);
         }
+
+        // Cargar informe de planificación en paralelo
+        this.renderPlanningReport();
+    },
+
+    async renderPlanningReport(fecha = null) {
+        const container = document.getElementById('report-planning-section');
+        if (!container) return;
+
+        container.innerHTML = '<p style="color:var(--text-muted);padding:.5rem 0">Cargando informe de planificación...</p>';
+
+        try {
+            const params = fecha ? `?fecha=${fecha}` : '';
+            const data = await API.get(`/api/planning/daily-report${params}`);
+
+            const pct = data.pct_uso_tiempo ?? 0;
+            const pctCumpl = data.pct_cumplimiento_plan;
+            const pctColor = pct >= 90 ? 'var(--success,#16a34a)' : pct >= 60 ? 'var(--warning,#d97706)' : 'var(--danger,#dc2626)';
+            const cumplColor = !pctCumpl ? 'var(--text-muted)' :
+                pctCumpl >= 90 ? 'var(--success,#16a34a)' : pctCumpl >= 60 ? 'var(--warning,#d97706)' : 'var(--danger,#dc2626)';
+
+            const personas = Math.abs(data.personas_equivalente_diferencia);
+            const personasLabel = data.personas_equivalente_diferencia >= 0
+                ? `${personas} persona${personas !== 1 ? 's' : ''} sin usar`
+                : `${personas} persona${personas !== 1 ? 's' : ''} extra necesarias`;
+
+            container.innerHTML = `
+                <h3 style="margin-bottom:1rem;">Informe del día — ${data.fecha}</h3>
+
+                <div class="daily-report-grid">
+                    <div class="daily-kpi-card">
+                        <div class="daily-kpi-value" style="color:${pctColor}">${pct}%</div>
+                        <div class="daily-kpi-label">% Uso del tiempo disponible</div>
+                    </div>
+                    <div class="daily-kpi-card">
+                        <div class="daily-kpi-value" style="color:${cumplColor}">${pctCumpl !== null ? pctCumpl + '%' : 'Sin plan'}</div>
+                        <div class="daily-kpi-label">Cumplimiento del plan</div>
+                    </div>
+                    <div class="daily-kpi-card">
+                        <div class="daily-kpi-value">${Math.round(data.minutos_trabajados / 60 * 10) / 10}h</div>
+                        <div class="daily-kpi-label">Horas trabajadas</div>
+                    </div>
+                    <div class="daily-kpi-card">
+                        <div class="daily-kpi-value">${data.n_operarios}</div>
+                        <div class="daily-kpi-label">Operarias activas</div>
+                    </div>
+                    <div class="daily-kpi-card">
+                        <div class="daily-kpi-value" style="font-size:1.2rem;color:var(--primary)">${personasLabel}</div>
+                        <div class="daily-kpi-label">Capacidad (en personas)</div>
+                    </div>
+                    <div class="daily-kpi-card">
+                        <div class="daily-kpi-value" style="font-size:1.2rem">$${data.costo_jornada_pesos.toLocaleString('es-CL')}</div>
+                        <div class="daily-kpi-label">Costo jornada completa</div>
+                    </div>
+                </div>
+
+                <!-- Barra visual uso del tiempo -->
+                <div class="card" style="padding:1rem;margin-bottom:1rem;">
+                    <div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:.4rem;">
+                        <span style="color:var(--text-secondary)">Tiempo trabajado: <strong>${Math.round(data.minutos_trabajados)} min</strong></span>
+                        <span style="color:var(--text-secondary)">Disponible: <strong>${Math.round(data.minutos_disponibles)} min</strong></span>
+                    </div>
+                    <div style="height:12px;background:var(--border);border-radius:6px;overflow:hidden;">
+                        <div style="height:100%;width:${Math.min(pct, 100)}%;background:${pctColor};transition:width .4s;border-radius:6px;"></div>
+                    </div>
+                    ${data.minutos_plan > 0 ? `
+                    <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-top:.5rem;color:var(--text-muted)">
+                        <span>Plan del día: ${Math.round(data.minutos_plan)} min</span>
+                        <span>Diferencia vs. plan: ${Math.round(data.minutos_trabajados - data.minutos_plan) >= 0 ? '+' : ''}${Math.round(data.minutos_trabajados - data.minutos_plan)} min</span>
+                    </div>` : '<p style="font-size:.8rem;color:var(--text-muted);margin-top:.4rem">Sin planificación cargada para este día.</p>'}
+                </div>
+            `;
+        } catch (err) {
+            container.innerHTML = `<p style="color:var(--danger)">No se pudo cargar el informe de planificación: ${err.message}</p>`;
+        }
     },
 
     renderCharts(data) {

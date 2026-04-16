@@ -26,7 +26,7 @@ const ViewStockPanel = (() => {
 
     // ─── KPIs ─────────────────────────────────────
     function _updateKPIs() {
-        let ok = 0, bajo = 0, critico = 0, zero = 0, sinDatos = 0;
+        let ok = 0, bajo = 0, zero = 0, sinDatos = 0;
 
         _products.forEach(p => {
             const qty  = p.stock;
@@ -34,36 +34,30 @@ const ViewStockPanel = (() => {
             if (qty <= 0) { zero++; return; }
             const rule = _rulesMap[p.sku];
             if (rule) {
-                if (qty <= rule.stock_critico) { critico++; return; }
-                if (qty <= rule.stock_minimo)  { bajo++;    return; }
+                if (qty <= rule.stock_minimo) { bajo++; return; }
             }
             ok++;
         });
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-        set('sp-kpi-activos',   _activeSet.size);
-        set('sp-kpi-ok',        ok);
-        set('sp-kpi-bajo',      bajo);
-        set('sp-kpi-critico',   critico);
-        set('sp-kpi-zero',      zero + sinDatos);
+        set('sp-kpi-activos', _activeSet.size);
+        set('sp-kpi-ok',      ok);
+        set('sp-kpi-bajo',    bajo);
+        set('sp-kpi-zero',    zero + sinDatos);
 
-        // Resaltar tarjeta crítico si hay alertas
-        const critCard = document.getElementById('sp-card-critico');
-        if (critCard) critCard.classList.toggle('sp-card-alert', critico > 0 || zero > 0);
         const bajoCard = document.getElementById('sp-card-bajo');
-        if (bajoCard) bajoCard.classList.toggle('sp-card-warn', bajo > 0);
+        if (bajoCard) bajoCard.classList.toggle('sp-card-alert', bajo > 0 || zero > 0);
     }
 
     // ─── Tab Estado ──────────────────────────────
     function _stockStatus(sku, qty) {
-        if (qty === null || qty === undefined) return { cls: 'stock-zero',  label: 'Sin datos', order: 0 };
-        if (qty <= 0)                          return { cls: 'stock-zero',  label: 'Sin stock', order: 1 };
+        if (qty === null || qty === undefined) return { cls: 'stock-zero', label: 'Sin datos', order: 0 };
+        if (qty <= 0)                          return { cls: 'stock-zero', label: 'Sin stock',  order: 1 };
         const rule = _rulesMap[sku];
         if (rule) {
-            if (qty <= rule.stock_critico) return { cls: 'stock-low',  label: 'CRÍTICO', order: 2 };
-            if (qty <= rule.stock_minimo)  return { cls: 'stock-med',  label: 'Bajo',    order: 3 };
+            if (qty <= rule.stock_minimo) return { cls: 'stock-med', label: 'Bajo mínimo', order: 2 };
         }
-        return { cls: 'stock-high', label: 'OK', order: 4 };
+        return { cls: 'stock-high', label: 'OK', order: 3 };
     }
 
     function _renderEstado() {
@@ -93,26 +87,49 @@ const ViewStockPanel = (() => {
         if (noData) noData.classList.add('hidden');
 
         if (!list.length) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Sin resultados</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Sin resultados</td></tr>';
             return;
         }
 
-        tbody.innerHTML = list.map(p => {
-            const { cls, label } = _stockStatus(p.sku, p.stock);
-            const rule     = _rulesMap[p.sku];
-            const minStr   = rule ? rule.stock_minimo  : '—';
-            const critStr  = rule ? rule.stock_critico : '—';
-            const stockStr = (p.stock === null || p.stock === undefined)
-                ? '<span style="color:var(--text-muted);font-size:.8rem">Sin datos</span>'
-                : `<span class="stock-pill ${cls}">${p.stock}</span>`;
-            return `<tr class="sp-row-${cls}">
-                <td><code class="sp-sku-code">${p.sku}</code></td>
-                <td style="color:var(--text-secondary);font-size:.85rem">${p.description || '—'}</td>
-                <td>${stockStr}</td>
-                <td style="color:var(--text-secondary);font-size:.82rem;text-align:center">${minStr} / ${critStr}</td>
-                <td><span class="sp-status-pill sp-status-${cls}">${label}</span></td>
-            </tr>`;
-        }).join('');
+        // Agrupar por caja
+        const groups = {};
+        list.forEach(p => {
+            const caja = p.caja || 'Sin caja';
+            if (!groups[caja]) groups[caja] = [];
+            groups[caja].push(p);
+        });
+
+        const rows = [];
+        Object.keys(groups).sort().forEach(caja => {
+            rows.push(`<tr class="sp-caja-header">
+                <td colspan="6" style="background:var(--surface-alt,#f3f4f6);font-weight:600;font-size:.8rem;color:var(--text-secondary);padding:.4rem .75rem;letter-spacing:.05em">
+                    ${caja}
+                </td>
+            </tr>`);
+            groups[caja].forEach(p => {
+                const { cls, label } = _stockStatus(p.sku, p.stock);
+                const rule   = _rulesMap[p.sku];
+                const minStr = rule ? rule.stock_minimo : '—';
+                const stockStr = (p.stock === null || p.stock === undefined)
+                    ? '<span style="color:var(--text-muted);font-size:.8rem">Sin datos</span>'
+                    : `<span class="stock-pill ${cls}">${p.stock}</span>`;
+                let difStr = '—';
+                if (rule && p.stock !== null && p.stock !== undefined) {
+                    const dif = p.stock - rule.stock_minimo;
+                    const color = dif >= 0 ? 'var(--success,#16a34a)' : 'var(--danger,#dc2626)';
+                    difStr = `<span style="font-weight:600;color:${color}">${dif >= 0 ? '+' : ''}${dif}</span>`;
+                }
+                rows.push(`<tr class="sp-row-${cls}">
+                    <td><code class="sp-sku-code">${p.sku}</code></td>
+                    <td style="color:var(--text-secondary);font-size:.85rem">${p.description || '—'}</td>
+                    <td>${stockStr}</td>
+                    <td style="text-align:center;color:var(--text-secondary);font-size:.82rem">${minStr}</td>
+                    <td style="text-align:center">${difStr}</td>
+                    <td><span class="sp-status-pill sp-status-${cls}">${label}</span></td>
+                </tr>`);
+            });
+        });
+        tbody.innerHTML = rows.join('');
     }
 
     // ─── Sincronización ──────────────────────────
@@ -152,7 +169,8 @@ const ViewStockPanel = (() => {
             _products = [..._activeSet].map(sku => ({
                 sku,
                 description: descMap[sku] || '',
-                stock: stockMap[sku] ?? null
+                stock: stockMap[sku] ?? null,
+                caja: (activeSkus.find(s => s.sku.toUpperCase() === sku) || {}).caja || ''
             }));
 
             _renderEstado();
@@ -199,7 +217,8 @@ const ViewStockPanel = (() => {
             _products = activeSkus.map(s => ({
                 sku: s.sku.toUpperCase(),
                 description: s.descripcion || '',
-                stock: _hasInventory ? (stockMap[s.sku.toUpperCase()] ?? null) : null
+                stock: _hasInventory ? (stockMap[s.sku.toUpperCase()] ?? null) : null,
+                caja: s.caja || ''
             }));
 
             _renderEstado();
@@ -217,7 +236,7 @@ const ViewStockPanel = (() => {
         const rules = Object.values(_rulesMap);
 
         if (!rules.length) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Sin reglas definidas</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">Sin reglas definidas</td></tr>';
             return;
         }
 
@@ -225,7 +244,6 @@ const ViewStockPanel = (() => {
             <tr>
                 <td><code>${r.sku}</code></td>
                 <td><span class="stock-pill stock-med">${r.stock_minimo}</span></td>
-                <td><span class="stock-pill stock-low">${r.stock_critico}</span></td>
                 <td>
                     <button class="btn btn-ghost btn-sm" onclick="ViewStockPanel.startEdit(${r.id})">Editar</button>
                     <button class="btn btn-ghost btn-sm btn-danger-text" onclick="ViewStockPanel.deleteRule(${r.id},'${r.sku}')">Eliminar</button>
@@ -239,18 +257,17 @@ const ViewStockPanel = (() => {
         form._wired = true;
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const sku     = (document.getElementById('sp-rule-sku').value || '').trim().toUpperCase();
-            const minimo  = parseInt(document.getElementById('sp-rule-minimo').value, 10);
-            const critico = parseInt(document.getElementById('sp-rule-critico').value, 10);
+            const sku    = (document.getElementById('sp-rule-sku').value || '').trim().toUpperCase();
+            const minimo = parseInt(document.getElementById('sp-rule-minimo').value, 10);
 
-            if (!sku || isNaN(minimo) || isNaN(critico)) {
+            if (!sku || isNaN(minimo)) {
                 UI.showSnackbar('Completa todos los campos', 'error'); return;
             }
-            if (critico >= minimo) {
-                UI.showSnackbar('Stock crítico debe ser menor que el mínimo', 'error'); return;
+            if (minimo < 0) {
+                UI.showSnackbar('El stock mínimo debe ser >= 0', 'error'); return;
             }
 
-            const body = { sku, stock_minimo: minimo, stock_critico: critico };
+            const body = { sku, stock_minimo: minimo };
             try {
                 let saved;
                 if (_editRuleId) {
@@ -285,9 +302,8 @@ const ViewStockPanel = (() => {
         const rule = Object.values(_rulesMap).find(r => r.id === id);
         if (!rule) return;
         _editRuleId = id;
-        document.getElementById('sp-rule-sku').value     = rule.sku;
-        document.getElementById('sp-rule-minimo').value  = rule.stock_minimo;
-        document.getElementById('sp-rule-critico').value = rule.stock_critico;
+        document.getElementById('sp-rule-sku').value    = rule.sku;
+        document.getElementById('sp-rule-minimo').value = rule.stock_minimo;
         const title = document.getElementById('sp-rule-form-title');
         if (title) title.textContent = `Editando: ${rule.sku}`;
         document.getElementById('sp-rule-cancel')?.classList.remove('hidden');
@@ -461,5 +477,58 @@ const ViewStockPanel = (() => {
         await _loadInitial();
     }
 
-    return { render, sync, startEdit, deleteRule };
+    // ─── CSV Upload ───────────────────────────────
+    async function uploadCSV(tipo) {
+        const fileInput = document.getElementById(`sp-csv-${tipo}-file`);
+        const feedback  = document.getElementById(`sp-csv-${tipo}-feedback`);
+        const file = fileInput?.files?.[0];
+
+        if (!file) {
+            if (feedback) feedback.innerHTML = '<span style="color:var(--danger)">Selecciona un archivo CSV primero.</span>';
+            return;
+        }
+
+        if (feedback) feedback.innerHTML = '<span style="color:var(--text-muted)">Subiendo...</span>';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const token = localStorage.getItem('reproceso_token');
+            const url = tipo === 'productos' ? '/api/upload/productos-csv' : '/api/upload/tiempos-csv';
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Error al subir');
+            if (feedback) feedback.innerHTML = `<span style="color:var(--success)">✓ ${data.upserted} registros cargados correctamente.</span>`;
+            if (fileInput) fileInput.value = '';
+            UI.showSnackbar(`CSV de ${tipo} cargado: ${data.upserted} registros`, 'success');
+            // Recargar datos si fue de productos
+            if (tipo === 'productos') await _loadInitial();
+        } catch (err) {
+            if (feedback) feedback.innerHTML = `<span style="color:var(--danger)">${err.message}</span>`;
+            UI.showSnackbar(`Error: ${err.message}`, 'error');
+        }
+    }
+
+    function downloadTemplate(tipo) {
+        let csv, filename;
+        if (tipo === 'productos') {
+            csv = 'sku,descripcion,caja\nGGAL070,Galleta Galletita 70g,Caja 1\nIMOCA,Imperial Moca,Caja 2\n';
+            filename = 'plantilla_productos.csv';
+        } else {
+            csv = 'sku,minutos_por_caja\nGGAL070,28\nIMOCA,42\n';
+            filename = 'plantilla_tiempos.csv';
+        }
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    return { render, sync, startEdit, deleteRule, uploadCSV, downloadTemplate };
 })();

@@ -167,6 +167,21 @@
                         </svg>
                         Informes
                     </button>
+                    <button id="btn-view-optimization" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                            <path d="M11 8v6M8 11h6"/>
+                        </svg>
+                        Optimización
+                    </button>
+                    <button id="btn-view-planning" class="btn btn-secondary hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                            <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/>
+                        </svg>
+                        Planificación
+                    </button>
                     <button id="btn-new-process" class="btn btn-primary">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
@@ -608,12 +623,7 @@
             <div class="sp-kpi-card sp-kpi-warn" id="sp-card-bajo">
                 <div class="sp-kpi-icon">⚠️</div>
                 <div class="sp-kpi-value" id="sp-kpi-bajo">—</div>
-                <div class="sp-kpi-label">Stock Bajo</div>
-            </div>
-            <div class="sp-kpi-card sp-kpi-danger" id="sp-card-critico">
-                <div class="sp-kpi-icon">🔴</div>
-                <div class="sp-kpi-value" id="sp-kpi-critico">—</div>
-                <div class="sp-kpi-label">Stock Crítico</div>
+                <div class="sp-kpi-label">Bajo Mínimo</div>
             </div>
             <div class="sp-kpi-card sp-kpi-zero">
                 <div class="sp-kpi-icon">🚫</div>
@@ -641,6 +651,13 @@
                     <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
                 </svg>
                 Productos Activos
+            </button>
+            <button class="sp-tab" data-tab="cargas">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Cargas CSV
             </button>
         </div>
 
@@ -676,12 +693,13 @@
                                 <th>SKU</th>
                                 <th>Descripción</th>
                                 <th>Stock actual</th>
-                                <th style="text-align:center">Mín / Crít</th>
+                                <th style="text-align:center">Stock mínimo</th>
+                                <th style="text-align:center">Diferencia</th>
                                 <th>Estado</th>
                             </tr>
                         </thead>
                         <tbody id="sp-estado-body">
-                            <tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Cargando...</td></tr>
+                            <tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Cargando...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -702,12 +720,7 @@
                         <div class="form-group">
                             <label>Stock mínimo <span class="required">*</span></label>
                             <input type="number" id="sp-rule-minimo" class="form-control" placeholder="Ej: 20" min="0" required>
-                            <small style="color:var(--text-muted)">Bajo este valor → amarillo</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Stock crítico <span class="required">*</span></label>
-                            <input type="number" id="sp-rule-critico" class="form-control" placeholder="Ej: 5" min="0" required>
-                            <small style="color:var(--text-muted)">Bajo este valor → rojo</small>
+                            <small style="color:var(--text-muted)">Bajo este valor → alerta</small>
                         </div>
                         <div class="form-actions" style="gap:.5rem;">
                             <button type="submit" class="btn btn-primary">Guardar</button>
@@ -723,12 +736,11 @@
                                 <tr>
                                     <th>SKU</th>
                                     <th>Stock mínimo</th>
-                                    <th>Stock crítico</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="sp-rules-body">
-                                <tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Cargando...</td></tr>
+                                <tr><td colspan="3" style="text-align:center;color:var(--text-muted)">Cargando...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -771,6 +783,168 @@
             </div>
         </div>
 
+        <!-- Tab: Cargas CSV -->
+        <div id="sp-tab-cargas" class="sp-tab-panel hidden">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
+
+                <!-- CSV Productos -->
+                <div class="card" style="padding:1.25rem;">
+                    <h3 style="margin-bottom:.5rem;">Productos por caja</h3>
+                    <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:1rem;">
+                        Sube un CSV con los campos: <code>sku, descripcion, caja</code>.<br>
+                        Los registros existentes se actualizarán (upsert).
+                    </p>
+                    <a href="#" id="sp-csv-productos-template" style="font-size:.82rem;color:var(--primary);display:block;margin-bottom:1rem;"
+                        onclick="ViewStockPanel.downloadTemplate('productos');return false;">
+                        Descargar plantilla CSV
+                    </a>
+                    <div class="form-group">
+                        <label>Archivo CSV</label>
+                        <input type="file" id="sp-csv-productos-file" accept=".csv" class="form-control">
+                    </div>
+                    <div id="sp-csv-productos-feedback" style="margin:.5rem 0;font-size:.85rem;"></div>
+                    <button class="btn btn-primary" onclick="ViewStockPanel.uploadCSV('productos')">
+                        Subir productos
+                    </button>
+                </div>
+
+                <!-- CSV Tiempos -->
+                <div class="card" style="padding:1.25rem;">
+                    <h3 style="margin-bottom:.5rem;">Tiempos de producción</h3>
+                    <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:1rem;">
+                        Sube un CSV con los campos: <code>sku, minutos_por_caja</code>.<br>
+                        Define cuántos minutos tarda una operaria en procesar una caja de cada SKU.
+                    </p>
+                    <a href="#" id="sp-csv-tiempos-template" style="font-size:.82rem;color:var(--primary);display:block;margin-bottom:1rem;"
+                        onclick="ViewStockPanel.downloadTemplate('tiempos');return false;">
+                        Descargar plantilla CSV
+                    </a>
+                    <div class="form-group">
+                        <label>Archivo CSV</label>
+                        <input type="file" id="sp-csv-tiempos-file" accept=".csv" class="form-control">
+                    </div>
+                    <div id="sp-csv-tiempos-feedback" style="margin:.5rem 0;font-size:.85rem;"></div>
+                    <button class="btn btn-primary" onclick="ViewStockPanel.uploadCSV('tiempos')">
+                        Subir tiempos
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+    </section>
+
+    <!-- View: Informes Diarios -->
+    <section id="view-reports" class="view hidden">
+        <div class="view-header">
+            <div>
+                <h2>Informe Diario</h2>
+                <p style="color:var(--text-secondary);font-size:.875rem;margin-top:.2rem;">
+                    Resumen del día: procesos, stock procesado y cumplimiento del plan.
+                </p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-ghost btn-sm" onclick="window.print()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                        <rect x="6" y="14" width="12" height="8"/>
+                    </svg>
+                    Imprimir
+                </button>
+            </div>
+        </div>
+
+        <!-- KPIs generales del día -->
+        <div class="daily-report-grid" style="margin-bottom:1.5rem;">
+            <div class="daily-kpi-card">
+                <div class="daily-kpi-value" id="report-kpi-total">—</div>
+                <div class="daily-kpi-label">Procesos del día</div>
+            </div>
+            <div class="daily-kpi-card">
+                <div class="daily-kpi-value" id="report-kpi-emergencias">—</div>
+                <div class="daily-kpi-label">Emergencias</div>
+            </div>
+            <div class="daily-kpi-card">
+                <div class="daily-kpi-value" id="report-kpi-operarios">—</div>
+                <div class="daily-kpi-label">Operarias activas</div>
+            </div>
+            <div class="daily-kpi-card">
+                <div class="daily-kpi-value" id="report-kpi-unidades">—</div>
+                <div class="daily-kpi-label">Unidades reprocesadas</div>
+            </div>
+        </div>
+
+        <!-- Informe de planificación (KPI % uso + cumplimiento + personas) -->
+        <div id="report-planning-section" class="card" style="padding:1.25rem;margin-bottom:1.5rem;">
+            <p style="color:var(--text-muted)">Cargando informe de planificación...</p>
+        </div>
+
+        <!-- Tabla de procesos -->
+        <div class="card" style="margin-bottom:1.5rem;">
+            <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--border);">
+                <h3 style="margin:0;">Detalle de procesos</h3>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Operaria</th>
+                            <th style="text-align:center">Stock inicial</th>
+                            <th style="text-align:center">Stock final</th>
+                            <th style="text-align:center">Variación</th>
+                            <th>Duración</th>
+                            <th>Tipo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-table-body">
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Gráficos -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;">
+            <div class="card" style="padding:1.25rem;">
+                <h3 style="margin-bottom:1rem;">Procesos por operaria</h3>
+                <div style="height:220px;"><canvas id="chart-report-ops"></canvas></div>
+            </div>
+            <div class="card" style="padding:1.25rem;">
+                <h3 style="margin-bottom:1rem;">Top SKUs</h3>
+                <div style="height:220px;"><canvas id="chart-report-skus"></canvas></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- View: Optimización de Asignación -->
+    <section id="view-optimization" class="view hidden">
+        <div class="view-header">
+            <div>
+                <h2>Optimización de Asignación</h2>
+                <p style="color:var(--text-secondary);font-size:.875rem;margin-top:.2rem;">
+                    Sugerencia de asignación por operaria según velocidad histórica. Carga actual vs. capacidad.
+                </p>
+            </div>
+        </div>
+        <div id="optimization-container">
+            <!-- Populated by ViewOptimization.render() -->
+        </div>
+    </section>
+
+    <!-- View: Planificación Semanal -->
+    <section id="view-planning" class="view hidden">
+        <div class="view-header">
+            <div>
+                <h2>Planificación de Producción</h2>
+                <p style="color:var(--text-secondary);font-size:.875rem;margin-top:.2rem;">
+                    Programá la producción semanal por SKU y operaria.
+                </p>
+            </div>
+        </div>
+        <div id="planning-container">
+            <!-- Populated by ViewPlanning.render() -->
+        </div>
     </section>
 
     </main>
@@ -817,8 +991,10 @@
     <script src="/static/js/views/detail.js?v=11"></script>
     <script src="/static/js/views/performance.js?v=11"></script>
     <script src="/static/js/views/users.js?v=11"></script>
-    <script src="/static/js/views/stock-panel.js?v=1"></script>
+    <script src="/static/js/views/stock-panel.js?v=2"></script>
     <script src="/static/js/views/reports.js?v=1"></script>
+    <script src="/static/js/views/planning.js?v=1"></script>
+    <script src="/static/js/views/optimization.js?v=1"></script>
     <script src="/static/js/ui.js?v=12"></script>
     <script src="/static/js/break-monitor.js?v=11"></script>
     <script src="/static/js/app.js?v=13"></script>

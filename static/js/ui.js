@@ -106,6 +106,10 @@ const UI = {
             ViewStockPanel.render();
         } else if (viewId === 'view-reports') {
             ViewReports.render();
+        } else if (viewId === 'view-planning') {
+            ViewPlanning.render();
+        } else if (viewId === 'view-optimization') {
+            ViewOptimization.render();
         }
     },
 
@@ -536,6 +540,12 @@ const UI = {
 
         const btnReports = document.getElementById('btn-view-reports');
         if (btnReports) btnReports.onclick = () => UI.navigateTo('view-reports');
+
+        const btnPlanning = document.getElementById('btn-view-planning');
+        if (btnPlanning) btnPlanning.onclick = () => UI.navigateTo('view-planning');
+
+        const btnOptimization = document.getElementById('btn-view-optimization');
+        if (btnOptimization) btnOptimization.onclick = () => UI.navigateTo('view-optimization');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 

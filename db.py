@@ -117,15 +117,35 @@ CREATE TABLE IF NOT EXISTS stock_rules (
     id             SERIAL PRIMARY KEY,
     sku            TEXT NOT NULL UNIQUE,
     stock_minimo   INTEGER NOT NULL DEFAULT 10,
-    stock_critico  INTEGER NOT NULL DEFAULT 5,
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS active_skus (
     sku         TEXT PRIMARY KEY,
-    descripcion TEXT NOT NULL DEFAULT ''
+    descripcion TEXT NOT NULL DEFAULT '',
+    caja        TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS product_times (
+    sku              TEXT PRIMARY KEY,
+    minutos_por_caja NUMERIC(8,2) NOT NULL DEFAULT 0,
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS plan_produccion (
+    id              SERIAL PRIMARY KEY,
+    fecha           DATE NOT NULL,
+    sku             TEXT NOT NULL,
+    cajas_plan      INTEGER NOT NULL DEFAULT 0,
+    operario_id     INTEGER REFERENCES reproceso_usuarios(id),
+    es_emergencia   BOOLEAN DEFAULT FALSE,
+    cajas_real      INTEGER,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (fecha, sku, operario_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_fecha ON plan_produccion(fecha DESC);
 
 CREATE INDEX IF NOT EXISTS idx_procesos_operario  ON reproceso_procesos(operario_id);
 CREATE INDEX IF NOT EXISTS idx_procesos_estado    ON reproceso_procesos(estado);
@@ -162,6 +182,24 @@ async def init_db():
             await conn.execute("ALTER TABLE reproceso_procesos ADD COLUMN stock_inicial INTEGER")
             await conn.execute("ALTER TABLE reproceso_procesos ADD COLUMN stock_final INTEGER")
 
+        # Migración: eliminar stock_critico de stock_rules (ahora solo stock_minimo)
+        critico_exists = await conn.fetchval("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'stock_rules' AND column_name = 'stock_critico'
+        """)
+        if critico_exists:
+            logger.info("[DB] Migración: eliminando columna stock_critico de stock_rules...")
+            await conn.execute("ALTER TABLE stock_rules DROP COLUMN stock_critico")
+
+        # Migración: agregar columna caja a active_skus
+        caja_exists = await conn.fetchval("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'active_skus' AND column_name = 'caja'
+        """)
+        if not caja_exists:
+            logger.info("[DB] Migración: añadiendo columna caja a active_skus...")
+            await conn.execute("ALTER TABLE active_skus ADD COLUMN caja TEXT NOT NULL DEFAULT ''")
+
         # Seed usuarios
         user_count = await conn.fetchval("SELECT COUNT(*) FROM reproceso_usuarios")
         if user_count == 0:
@@ -180,12 +218,13 @@ async def init_db():
                     )
             logger.info("[DB] Usuarios por defecto creados.")
 
-        # Seed config de pausas obligatorias (valores por defecto: desactivado)
+        # Seed config de pausas obligatorias y jornada
         await conn.execute("""
             INSERT INTO reproceso_config (key, value) VALUES
                 ('break_enabled',       'false'),
                 ('break_work_minutes',  '90'),
-                ('break_rest_minutes',  '10')
+                ('break_rest_minutes',  '10'),
+                ('horas_jornada',       '6.5')
             ON CONFLICT (key) DO NOTHING
         """)
 
@@ -205,6 +244,45 @@ async def init_db():
                         sku
                     )
             logger.info("[DB] SKUs por defecto creados.")
+
+        # Seed mock: productos activos agrupados por caja con tiempos de producción
+        active_count = await conn.fetchval("SELECT COUNT(*) FROM active_skus")
+        if active_count == 0:
+            # (sku, descripcion, caja, minutos_por_caja)
+            mock_products = [
+                ("GCMD",    "Galleta Chocolate Mediana",       "Caja 1",  35.0),
+                ("GGAL070", "Galleta Galletita 70g",           "Caja 1",  28.0),
+                ("IMOCA",   "Imperial Moca",                   "Caja 2",  42.0),
+                ("IMOCP",   "Imperial Moca Plus",              "Caja 2",  45.0),
+                ("MCCE",    "Muffin Chocolate Chips Estándar", "Caja 2",  50.0),
+                ("SCCA",    "Sándwich Crema Caramelo",         "Caja 3",  38.0),
+                ("SECC090", "Selección Crema Choco 90g",       "Caja 3",  32.0),
+                ("SECPI",   "Selección Crema Pi",              "Caja 3",  33.0),
+                ("SEKOF",   "Sekof Original",                  "Caja 4",  40.0),
+                ("SEKQB",   "Sekof QB",                        "Caja 4",  41.0),
+                ("SEKRN",   "Sekof Relleno Natural",           "Caja 4",  39.0),
+                ("SEPASP",  "Selección Pasp",                  "Caja 5",  36.0),
+                ("SEPC",    "Selección Pecado",                "Caja 5",  37.0),
+                ("SEPEIC",  "Selección Peic",                  "Caja 5",  34.0),
+                ("SEPOD",   "Selección Pod",                   "Caja 6",  43.0),
+                ("SEPOF",   "Selección Pof",                   "Caja 6",  44.0),
+                ("SESCD",   "Selección SCD",                   "Caja 6",  31.0),
+                ("SGEP",    "Surtido Gep",                     "Caja 7",  48.0),
+                ("SKPXL",   "Sekof XL",                        "Caja 7",  55.0),
+            ]
+            async with conn.transaction():
+                for sku, desc, caja, mins in mock_products:
+                    await conn.execute(
+                        "INSERT INTO active_skus (sku, descripcion, caja) VALUES ($1, $2, $3) "
+                        "ON CONFLICT (sku) DO NOTHING",
+                        sku, desc, caja
+                    )
+                    await conn.execute(
+                        "INSERT INTO product_times (sku, minutos_por_caja) VALUES ($1, $2) "
+                        "ON CONFLICT (sku) DO NOTHING",
+                        sku, mins
+                    )
+            logger.info("[DB] Productos mock con caja y tiempos creados.")
 
     logger.info("[DB] Control Reproceso DB inicializada en PostgreSQL (asyncpg).")
 
@@ -299,21 +377,21 @@ def invalidate_skus_cache():
 
 
 async def get_active_skus_full() -> list[dict]:
-    """Retorna SKUs activos con descripción."""
+    """Retorna SKUs activos con descripción y caja."""
     async with get_conn() as conn:
-        rows = await conn.fetch("SELECT sku, descripcion FROM active_skus ORDER BY sku")
+        rows = await conn.fetch("SELECT sku, descripcion, caja FROM active_skus ORDER BY caja, sku")
     return [dict(r) for r in rows]
 
 
 async def set_active_skus(skus: list[dict]):
-    """Reemplaza la lista completa de SKUs activos. Cada item: {sku, descripcion}."""
+    """Reemplaza la lista completa de SKUs activos. Cada item: {sku, descripcion, caja?}."""
     async with get_conn() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM active_skus")
             if skus:
                 await conn.executemany(
-                    "INSERT INTO active_skus (sku, descripcion) VALUES ($1, $2)",
-                    [(s["sku"].upper(), s.get("descripcion", "")) for s in skus]
+                    "INSERT INTO active_skus (sku, descripcion, caja) VALUES ($1, $2, $3)",
+                    [(s["sku"].upper(), s.get("descripcion", ""), s.get("caja", "")) for s in skus]
                 )
     invalidate_skus_cache()
 

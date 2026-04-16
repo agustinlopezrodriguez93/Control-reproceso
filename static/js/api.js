@@ -80,6 +80,25 @@ const API = {
         }
     },
 
+    async patch(url, data) {
+        try {
+            const res = await fetch(url, {
+                method: 'PATCH',
+                headers: this.getHeaders(),
+                body: JSON.stringify(data)
+            });
+            if (res.status === 401) { app.logout(); return; }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Error de servidor' }));
+                throw new Error(err.detail || `Error ${res.status}`);
+            }
+            return await res.json();
+        } catch (e) {
+            console.error(`API PATCH ${url}:`, e);
+            throw e;
+        }
+    },
+
     async delete(url) {
         try {
             const res = await fetch(url, {

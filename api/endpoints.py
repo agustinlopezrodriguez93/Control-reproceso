@@ -485,7 +485,6 @@ async def api_inventory_stock(maestro=Depends(require_maestro)):
 class StockRuleIn(BaseModel):
     sku: str
     stock_minimo: int
-    stock_critico: int
 
     @field_validator('sku')
     @classmethod
@@ -494,11 +493,11 @@ class StockRuleIn(BaseModel):
             raise ValueError('SKU no puede estar vacío')
         return v.strip().upper()
 
-    @field_validator('stock_minimo', 'stock_critico')
+    @field_validator('stock_minimo')
     @classmethod
     def non_negative(cls, v):
         if v < 0:
-            raise ValueError('Los umbrales deben ser >= 0')
+            raise ValueError('El umbral debe ser >= 0')
         return v
 
 
@@ -506,7 +505,7 @@ class StockRuleIn(BaseModel):
 async def get_stock_rules(maestro=Depends(require_maestro)):
     async with get_conn() as conn:
         rows = await conn.fetch(
-            "SELECT id, sku, stock_minimo, stock_critico, updated_at FROM stock_rules ORDER BY sku"
+            "SELECT id, sku, stock_minimo, updated_at FROM stock_rules ORDER BY sku"
         )
     return {"rules": [dict(r) for r in rows]}
 
@@ -516,10 +515,10 @@ async def create_stock_rule(body: StockRuleIn, maestro=Depends(require_maestro))
     async with get_conn() as conn:
         try:
             row = await conn.fetchrow(
-                """INSERT INTO stock_rules (sku, stock_minimo, stock_critico)
-                   VALUES ($1, $2, $3)
-                   RETURNING id, sku, stock_minimo, stock_critico, updated_at""",
-                body.sku, body.stock_minimo, body.stock_critico
+                """INSERT INTO stock_rules (sku, stock_minimo)
+                   VALUES ($1, $2)
+                   RETURNING id, sku, stock_minimo, updated_at""",
+                body.sku, body.stock_minimo
             )
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=409, detail=f"Ya existe una regla para SKU {body.sku}")
@@ -531,10 +530,10 @@ async def update_stock_rule(rule_id: int, body: StockRuleIn, maestro=Depends(req
     async with get_conn() as conn:
         row = await conn.fetchrow(
             """UPDATE stock_rules
-               SET sku=$1, stock_minimo=$2, stock_critico=$3, updated_at=NOW()
-               WHERE id=$4
-               RETURNING id, sku, stock_minimo, stock_critico, updated_at""",
-            body.sku, body.stock_minimo, body.stock_critico, rule_id
+               SET sku=$1, stock_minimo=$2, updated_at=NOW()
+               WHERE id=$3
+               RETURNING id, sku, stock_minimo, updated_at""",
+            body.sku, body.stock_minimo, rule_id
         )
     if not row:
         raise HTTPException(status_code=404, detail="Regla no encontrada")
@@ -577,14 +576,11 @@ async def api_stock_status(maestro=Depends(require_maestro)):
     """
     async with get_conn() as conn:
         rule_rows = await conn.fetch(
-            "SELECT sku, stock_minimo, stock_critico FROM stock_rules ORDER BY sku"
+            "SELECT sku, stock_minimo FROM stock_rules ORDER BY sku"
         )
 
     rules: dict = {
-        r["sku"].upper(): {
-            "stock_minimo": r["stock_minimo"],
-            "stock_critico": r["stock_critico"],
-        }
+        r["sku"].upper(): {"stock_minimo": r["stock_minimo"]}
         for r in rule_rows
     }
 
@@ -597,20 +593,19 @@ async def api_stock_status(maestro=Depends(require_maestro)):
             if sku:
                 stock_map[sku] = item.get("stock", 0)
 
-    criticos, bajos, ok, sin_datos = [], [], [], []
+    bajos, ok, sin_datos = [], [], []
 
     for sku, rule in rules.items():
         if sku in stock_map:
             stock_val = stock_map[sku]
+            diferencia = stock_val - rule["stock_minimo"]
             entry = {
                 "sku": sku,
                 "stock": stock_val,
                 "stock_minimo": rule["stock_minimo"],
-                "stock_critico": rule["stock_critico"],
+                "diferencia": diferencia,
             }
-            if stock_val <= rule["stock_critico"]:
-                criticos.append(entry)
-            elif stock_val <= rule["stock_minimo"]:
+            if stock_val <= rule["stock_minimo"]:
                 bajos.append(entry)
             else:
                 ok.append(entry)
@@ -618,13 +613,12 @@ async def api_stock_status(maestro=Depends(require_maestro)):
             sin_datos.append({
                 "sku": sku,
                 "stock_minimo": rule["stock_minimo"],
-                "stock_critico": rule["stock_critico"],
+                "diferencia": None,
             })
 
     return {
         "has_inventory": bool(inventory_data),
-        "criticos": sorted(criticos, key=lambda x: x["stock"]),
-        "bajos": sorted(bajos, key=lambda x: x["stock"]),
+        "bajos": sorted(bajos, key=lambda x: x["diferencia"]),
         "ok": sorted(ok, key=lambda x: x["sku"]),
         "sin_datos": sorted(sin_datos, key=lambda x: x["sku"]),
         "total_reglas": len(rules),
@@ -650,3 +644,506 @@ async def api_laudus_products(maestro=Depends(require_maestro)):
         return {"products": products}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Error al conectar con Laudus: {str(e)}")
+
+
+# ─── Product Times ────────────────────────────
+
+@router.get("/product-times")
+async def api_get_product_times(maestro=Depends(require_maestro)):
+    """Retorna tiempos de producción por SKU (minutos por caja)."""
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            "SELECT sku, minutos_por_caja, updated_at FROM product_times ORDER BY sku"
+        )
+    return {"times": [dict(r) for r in rows]}
+
+
+# ─── CSV Upload ───────────────────────────────
+
+from fastapi import UploadFile, File
+import csv
+import io
+
+
+@router.post("/upload/productos-csv")
+async def upload_productos_csv(
+    file: UploadFile = File(...),
+    maestro=Depends(require_maestro)
+):
+    """
+    Carga masiva de productos activos desde CSV.
+    Formato esperado: sku,descripcion,caja
+    Reemplaza SOLO los registros presentes en el CSV (upsert).
+    """
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser .csv")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")  # utf-8-sig maneja BOM de Excel
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+
+    # Normalizar nombres de columna (strip + lower)
+    required = {"sku", "descripcion", "caja"}
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV vacío o sin encabezados")
+
+    headers = {h.strip().lower() for h in reader.fieldnames}
+    missing = required - headers
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Columnas faltantes: {', '.join(sorted(missing))}. "
+                   f"Se esperan: sku, descripcion, caja"
+        )
+
+    rows = []
+    for i, row in enumerate(reader, start=2):
+        sku = (row.get("sku") or row.get("SKU") or "").strip().upper()
+        desc = (row.get("descripcion") or row.get("Descripcion") or row.get("descripción") or "").strip()
+        caja = (row.get("caja") or row.get("Caja") or "").strip()
+        if not sku:
+            continue
+        rows.append((sku, desc, caja))
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="El CSV no contiene filas válidas")
+
+    async with get_conn() as conn:
+        async with conn.transaction():
+            for sku, desc, caja in rows:
+                await conn.execute(
+                    """INSERT INTO active_skus (sku, descripcion, caja)
+                       VALUES ($1, $2, $3)
+                       ON CONFLICT (sku) DO UPDATE
+                       SET descripcion = EXCLUDED.descripcion, caja = EXCLUDED.caja""",
+                    sku, desc, caja
+                )
+
+    return {"ok": True, "upserted": len(rows)}
+
+
+@router.post("/upload/tiempos-csv")
+async def upload_tiempos_csv(
+    file: UploadFile = File(...),
+    maestro=Depends(require_maestro)
+):
+    """
+    Carga masiva de tiempos de producción desde CSV.
+    Formato esperado: sku,minutos_por_caja
+    Reemplaza (upsert) los registros presentes en el CSV.
+    """
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser .csv")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV vacío o sin encabezados")
+
+    headers = {h.strip().lower() for h in reader.fieldnames}
+    required = {"sku", "minutos_por_caja"}
+    missing = required - headers
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Columnas faltantes: {', '.join(sorted(missing))}. "
+                   f"Se esperan: sku, minutos_por_caja"
+        )
+
+    rows = []
+    for row in reader:
+        sku = (row.get("sku") or row.get("SKU") or "").strip().upper()
+        try:
+            mins = float((row.get("minutos_por_caja") or "").strip().replace(",", "."))
+        except (ValueError, AttributeError):
+            continue
+        if not sku or mins < 0:
+            continue
+        rows.append((sku, mins))
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="El CSV no contiene filas válidas")
+
+    async with get_conn() as conn:
+        async with conn.transaction():
+            for sku, mins in rows:
+                await conn.execute(
+                    """INSERT INTO product_times (sku, minutos_por_caja)
+                       VALUES ($1, $2)
+                       ON CONFLICT (sku) DO UPDATE
+                       SET minutos_por_caja = EXCLUDED.minutos_por_caja, updated_at = NOW()""",
+                    sku, mins
+                )
+
+    return {"ok": True, "upserted": len(rows)}
+
+
+# ─── Planificación de Producción ─────────────
+
+from datetime import date as _date, timedelta as _timedelta
+
+
+class PlanItemIn(BaseModel):
+    fecha: str          # ISO: YYYY-MM-DD
+    sku: str
+    cajas_plan: int
+    operario_id: Optional[int] = None
+    es_emergencia: bool = False
+
+    @field_validator('cajas_plan')
+    @classmethod
+    def cajas_positive(cls, v):
+        if v < 0:
+            raise ValueError('cajas_plan debe ser >= 0')
+        return v
+
+
+class PlanCierreIn(BaseModel):
+    cajas_real: int
+
+
+@router.get("/planning/semana")
+async def api_plan_semana(
+    fecha_inicio: Optional[str] = None,
+    maestro=Depends(require_maestro)
+):
+    """
+    Retorna el plan semanal (7 días desde fecha_inicio) junto con tiempos y capacidad.
+    Si no se indica fecha_inicio, usa el lunes de la semana actual.
+    """
+    if fecha_inicio:
+        try:
+            start = _date.fromisoformat(fecha_inicio)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="fecha_inicio debe ser YYYY-MM-DD")
+    else:
+        today = _date.today()
+        start = today - _timedelta(days=today.weekday())  # lunes
+
+    end = start + _timedelta(days=6)
+
+    async with get_conn() as conn:
+        plan_rows = await conn.fetch(
+            """SELECT p.id, p.fecha, p.sku, p.cajas_plan, p.operario_id,
+                      u.nombre AS operario_nombre, p.es_emergencia, p.cajas_real,
+                      pt.minutos_por_caja
+               FROM plan_produccion p
+               LEFT JOIN reproceso_usuarios u ON u.id = p.operario_id
+               LEFT JOIN product_times pt ON pt.sku = p.sku
+               WHERE p.fecha BETWEEN $1 AND $2
+               ORDER BY p.fecha, p.sku""",
+            start, end
+        )
+        times_rows = await conn.fetch(
+            "SELECT sku, minutos_por_caja FROM product_times ORDER BY sku"
+        )
+        operarios = await conn.fetch(
+            "SELECT id, nombre FROM reproceso_usuarios WHERE rol = 'Operario' ORDER BY nombre"
+        )
+        horas_cfg = await conn.fetchval(
+            "SELECT value FROM reproceso_config WHERE key = 'horas_jornada'"
+        )
+
+    horas_jornada = float(horas_cfg) if horas_cfg else 6.5
+    minutos_jornada = horas_jornada * 60
+    n_operarios = len(operarios)
+
+    plan_by_date: dict = {}
+    for r in plan_rows:
+        f = r["fecha"].isoformat()
+        if f not in plan_by_date:
+            plan_by_date[f] = []
+        plan_by_date[f].append(dict(r))
+
+    semana = []
+    for i in range(7):
+        dia = (start + _timedelta(days=i)).isoformat()
+        items = plan_by_date.get(dia, [])
+        minutos_plan = sum(
+            (it.get("minutos_por_caja") or 0) * it["cajas_plan"]
+            for it in items
+        )
+        cap = minutos_jornada * n_operarios
+        semana.append({
+            "fecha": dia,
+            "items": items,
+            "minutos_plan": round(minutos_plan, 1),
+            "minutos_disponibles": round(cap, 1),
+            "pct_uso": round(minutos_plan / cap * 100, 1) if cap else 0,
+        })
+
+    return {
+        "semana": semana,
+        "horas_jornada": horas_jornada,
+        "n_operarios": n_operarios,
+        "operarios": [dict(o) for o in operarios],
+        "product_times": {r["sku"]: float(r["minutos_por_caja"]) for r in times_rows},
+    }
+
+
+@router.post("/planning", status_code=201)
+async def api_crear_plan(body: PlanItemIn, maestro=Depends(require_maestro)):
+    """Crea o actualiza un ítem del plan de producción."""
+    try:
+        fecha = _date.fromisoformat(body.fecha)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="fecha debe ser YYYY-MM-DD")
+
+    async with get_conn() as conn:
+        try:
+            row = await conn.fetchrow(
+                """INSERT INTO plan_produccion (fecha, sku, cajas_plan, operario_id, es_emergencia)
+                   VALUES ($1, $2, $3, $4, $5)
+                   ON CONFLICT (fecha, sku, operario_id) DO UPDATE
+                   SET cajas_plan = EXCLUDED.cajas_plan, es_emergencia = EXCLUDED.es_emergencia
+                   RETURNING id, fecha, sku, cajas_plan, operario_id, es_emergencia, cajas_real""",
+                fecha, body.sku.upper(), body.cajas_plan, body.operario_id, body.es_emergencia
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return dict(row)
+
+
+@router.patch("/planning/{plan_id}/cierre")
+async def api_cierre_plan(plan_id: int, body: PlanCierreIn, maestro=Depends(require_maestro)):
+    """Registra el cierre real del día (cajas realmente producidas)."""
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            "UPDATE plan_produccion SET cajas_real=$1 WHERE id=$2 "
+            "RETURNING id, fecha, sku, cajas_plan, cajas_real",
+            body.cajas_real, plan_id
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Plan no encontrado")
+    return dict(row)
+
+
+@router.delete("/planning/{plan_id}", status_code=204)
+async def api_eliminar_plan(plan_id: int, maestro=Depends(require_maestro)):
+    async with get_conn() as conn:
+        result = await conn.execute("DELETE FROM plan_produccion WHERE id=$1", plan_id)
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Plan no encontrado")
+
+
+@router.get("/planning/daily-report")
+async def api_daily_report_planning(
+    fecha: Optional[str] = None,
+    maestro=Depends(require_maestro)
+):
+    """
+    Informe diario: compara planificado vs. real, % de uso del tiempo y KPI en personas.
+    Costo: $3.000/hora, jornada 6.5h → $19.500/persona-día.
+    """
+    target = _date.fromisoformat(fecha) if fecha else _date.today()
+    COSTO_HORA = 3000
+
+    async with get_conn() as conn:
+        horas_cfg = await conn.fetchval(
+            "SELECT value FROM reproceso_config WHERE key = 'horas_jornada'"
+        )
+        horas_jornada = float(horas_cfg) if horas_cfg else 6.5
+
+        operarios = await conn.fetch(
+            "SELECT id, nombre FROM reproceso_usuarios WHERE rol = 'Operario'"
+        )
+        n_operarios = len(operarios)
+        minutos_disponibles = horas_jornada * 60 * n_operarios
+
+        plan_rows = await conn.fetch(
+            """SELECT p.sku, p.cajas_plan, p.cajas_real, p.es_emergencia,
+                      u.nombre AS operario, pt.minutos_por_caja
+               FROM plan_produccion p
+               LEFT JOIN reproceso_usuarios u ON u.id = p.operario_id
+               LEFT JOIN product_times pt ON pt.sku = p.sku
+               WHERE p.fecha = $1""",
+            target
+        )
+
+        proc_rows = await conn.fetch(
+            """WITH pause_totals AS (
+                SELECT proceso_id,
+                       COALESCE(SUM(EXTRACT(EPOCH FROM
+                           (COALESCE(fin, NOW()) - inicio))/60), 0) AS pausa_min
+                FROM reproceso_pausas GROUP BY proceso_id
+            )
+            SELECT p.sku_destino, u.nombre AS operario,
+                   GREATEST(0,
+                       EXTRACT(EPOCH FROM (p.finished_at - p.started_at))/60
+                       - COALESCE(pt.pausa_min, 0)
+                   ) AS minutos_netos
+            FROM reproceso_procesos p
+            JOIN reproceso_usuarios u ON u.id = p.operario_id
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE p.finished_at::date = $1 AND p.estado = 'FINALIZADO'""",
+            target
+        )
+
+    minutos_trabajados = sum(float(r["minutos_netos"] or 0) for r in proc_rows)
+    minutos_plan = sum(
+        float(r["minutos_por_caja"] or 0) * r["cajas_plan"] for r in plan_rows
+    )
+
+    pct_tiempo = round(minutos_trabajados / minutos_disponibles * 100, 1) if minutos_disponibles else 0
+    pct_cumplimiento = round(minutos_trabajados / minutos_plan * 100, 1) if minutos_plan else None
+
+    horas_trabajadas = minutos_trabajados / 60
+    horas_disponibles = minutos_disponibles / 60
+    diferencia_horas = horas_disponibles - horas_trabajadas
+    personas_equivalente = round(diferencia_horas / horas_jornada, 2) if horas_jornada else 0
+
+    return {
+        "fecha": target.isoformat(),
+        "n_operarios": n_operarios,
+        "horas_jornada": horas_jornada,
+        "minutos_disponibles": round(minutos_disponibles, 1),
+        "minutos_trabajados": round(minutos_trabajados, 1),
+        "minutos_plan": round(minutos_plan, 1),
+        "pct_uso_tiempo": pct_tiempo,
+        "pct_cumplimiento_plan": pct_cumplimiento,
+        "personas_equivalente_diferencia": personas_equivalente,
+        "costo_jornada_pesos": round(horas_jornada * COSTO_HORA * n_operarios),
+        "plan_detalle": [dict(r) for r in plan_rows],
+        "procesos_dia": [dict(r) for r in proc_rows],
+    }
+
+
+@router.get("/planning/optimize")
+async def api_optimize_assignment(
+    fecha: Optional[str] = None,
+    maestro=Depends(require_maestro)
+):
+    """
+    Optimización de asignación: para cada SKU del plan del día, sugiere la operaria
+    más rápida basándose en el promedio de minutos por proceso histórico.
+    También muestra la carga asignada vs. capacidad disponible de cada operaria.
+    """
+    target = _date.fromisoformat(fecha) if fecha else _date.today()
+
+    async with get_conn() as conn:
+        horas_cfg = await conn.fetchval(
+            "SELECT value FROM reproceso_config WHERE key = 'horas_jornada'"
+        )
+        horas_jornada = float(horas_cfg) if horas_cfg else 6.5
+        minutos_jornada = horas_jornada * 60
+
+        # Operarios activos
+        operarios = await conn.fetch(
+            "SELECT id, nombre FROM reproceso_usuarios WHERE rol = 'Operario' ORDER BY nombre"
+        )
+
+        # Velocidad histórica por operaria × SKU (promedio minutos netos por proceso)
+        velocidad_rows = await conn.fetch(
+            """WITH pause_totals AS (
+                SELECT proceso_id,
+                       COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(fin, NOW())-inicio))/60),0) AS pausa_min
+                FROM reproceso_pausas GROUP BY proceso_id
+            )
+            SELECT p.operario_id, u.nombre AS operario, p.sku_destino AS sku,
+                   AVG(
+                       EXTRACT(EPOCH FROM (p.finished_at - p.started_at))/60
+                       - COALESCE(pt.pausa_min, 0)
+                   ) AS avg_min,
+                   COUNT(*) AS muestras
+            FROM reproceso_procesos p
+            JOIN reproceso_usuarios u ON u.id = p.operario_id
+            LEFT JOIN pause_totals pt ON pt.proceso_id = p.id
+            WHERE p.estado = 'FINALIZADO'
+              AND p.finished_at IS NOT NULL AND p.started_at IS NOT NULL
+            GROUP BY p.operario_id, u.nombre, p.sku_destino
+            ORDER BY p.sku_destino, avg_min"""
+        )
+
+        # Plan del día (si existe)
+        plan_rows = await conn.fetch(
+            """SELECT p.id, p.sku, p.cajas_plan, p.operario_id, u.nombre AS operario_nombre,
+                      pt.minutos_por_caja
+               FROM plan_produccion p
+               LEFT JOIN reproceso_usuarios u ON u.id = p.operario_id
+               LEFT JOIN product_times pt ON pt.sku = p.sku
+               WHERE p.fecha = $1""",
+            target
+        )
+
+    # Construir mapa de velocidades: {sku: [{operario_id, nombre, avg_min, muestras}]}
+    velocidad: dict = {}
+    for r in velocidad_rows:
+        sku = r["sku"]
+        if sku not in velocidad:
+            velocidad[sku] = []
+        if r["avg_min"] and r["avg_min"] > 0:
+            velocidad[sku].append({
+                "operario_id": r["operario_id"],
+                "operario": r["operario"],
+                "avg_min": round(float(r["avg_min"]), 1),
+                "muestras": r["muestras"],
+            })
+
+    # Mapa de carga actual del plan por operaria (minutos asignados)
+    carga: dict = {o["id"]: 0.0 for o in operarios}
+    for r in plan_rows:
+        if r["operario_id"] and r["minutos_por_caja"]:
+            carga[r["operario_id"]] = carga.get(r["operario_id"], 0) + float(r["minutos_por_caja"]) * r["cajas_plan"]
+
+    # Sugerencias por SKU del plan
+    sugerencias = []
+    for r in plan_rows:
+        sku = r["sku"]
+        opciones = velocidad.get(sku, [])
+        sugerencias.append({
+            "plan_id": r["id"],
+            "sku": sku,
+            "cajas_plan": r["cajas_plan"],
+            "minutos_por_caja": float(r["minutos_por_caja"] or 0),
+            "operario_asignado": r["operario_nombre"],
+            "sugerencia": opciones[0] if opciones else None,  # la más rápida (ya ordenado por avg_min)
+            "ranking": opciones[:3],  # top 3
+        })
+
+    # Carga vs. capacidad por operaria
+    capacidad_operarias = []
+    for o in operarios:
+        carga_min = carga.get(o["id"], 0.0)
+        pct = round(carga_min / minutos_jornada * 100, 1) if minutos_jornada else 0
+        capacidad_operarias.append({
+            "operario_id": o["id"],
+            "nombre": o["nombre"],
+            "minutos_asignados": round(carga_min, 1),
+            "minutos_disponibles": round(minutos_jornada, 1),
+            "pct_carga": pct,
+            "disponible": round(minutos_jornada - carga_min, 1),
+        })
+
+    return {
+        "fecha": target.isoformat(),
+        "horas_jornada": horas_jornada,
+        "sugerencias": sugerencias,
+        "capacidad_operarias": capacidad_operarias,
+        "sin_historial": [s["sku"] for s in sugerencias if not s["ranking"]],
+    }
+
+
+@router.post("/config/horas-jornada")
+async def api_set_horas_jornada(body: dict, maestro=Depends(require_maestro)):
+    """Actualiza las horas de jornada diaria (parámetro configurable)."""
+    horas = body.get("horas")
+    if not isinstance(horas, (int, float)) or horas <= 0 or horas > 24:
+        raise HTTPException(status_code=400, detail="horas debe ser un número entre 0 y 24")
+    async with get_conn() as conn:
+        await conn.execute(
+            "INSERT INTO reproceso_config (key, value) VALUES ('horas_jornada', $1) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            str(horas)
+        )
+    return {"ok": True, "horas_jornada": horas}
+
