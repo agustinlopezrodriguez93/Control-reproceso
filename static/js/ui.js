@@ -102,12 +102,8 @@ const UI = {
             ViewUsers.renderAudit();
         } else if (viewId === 'view-performance') {
             ViewPerformance.render();
-        } else if (viewId === 'view-inventory') {
-            ViewInventory.render();
-        } else if (viewId === 'view-stock-rules') {
-            ViewStockRules.render();
-        } else if (viewId === 'view-active-skus') {
-            ViewActiveSkus.render();
+        } else if (viewId === 'view-stock-panel') {
+            ViewStockPanel.render();
         }
     },
 
@@ -497,14 +493,8 @@ const UI = {
         const btnAudit = document.getElementById('btn-view-audit');
         if (btnAudit) btnAudit.onclick = () => UI.navigateTo('view-audit');
 
-        const btnInventory = document.getElementById('btn-view-inventory');
-        if (btnInventory) btnInventory.onclick = () => UI.navigateTo('view-inventory');
-
-        const btnStockRules = document.getElementById('btn-view-stock-rules');
-        if (btnStockRules) btnStockRules.onclick = () => UI.navigateTo('view-stock-rules');
-
-        const btnActiveSkus = document.getElementById('btn-view-active-skus');
-        if (btnActiveSkus) btnActiveSkus.onclick = () => UI.navigateTo('view-active-skus');
+        const btnStockPanel = document.getElementById('btn-view-stock-panel');
+        if (btnStockPanel) btnStockPanel.onclick = () => UI.navigateTo('view-stock-panel');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 

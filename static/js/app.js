@@ -9,7 +9,6 @@ const app = {
         // UI.init() DEBE ir antes de Store.init() para que el DOM esté listo
         // cuando Store emita 'store:public-users-updated' durante la carga inicial.
         UI.init();
-        this._setupStockAlertListeners();
 
         // Eventos que Store emite para notificar cambios de datos sin depender de UI.
         window.addEventListener('store:skus-updated', () => {
@@ -22,12 +21,11 @@ const app = {
         const loggedIn = await Store.init();
 
         if (loggedIn) {
-            UI.navigateTo('view-dashboard');
-            if (Store.state.currentRole === 'Operario') {
+            if (Store.state.currentRole === 'Maestro') {
+                UI.navigateTo('view-stock-panel');
+            } else {
+                UI.navigateTo('view-dashboard');
                 BreakMonitor.init();
-            } else if (Store.state.currentRole === 'Maestro') {
-                // Pequeño delay para que el dashboard renderice antes del overlay
-                setTimeout(() => this.showStockAlert(), 150);
             }
         } else {
             UI.navigateTo('view-login');
@@ -49,11 +47,11 @@ const app = {
             const ok = await Store.login(user, pass);
             if (ok) {
                 UI.showSnackbar(`Bienvenido, ${Store.state.currentUser}`);
-                UI.navigateTo('view-dashboard');
-                if (Store.state.currentRole === 'Operario') {
+                if (Store.state.currentRole === 'Maestro') {
+                    UI.navigateTo('view-stock-panel');
+                } else {
+                    UI.navigateTo('view-dashboard');
                     BreakMonitor.init();
-                } else if (Store.state.currentRole === 'Maestro') {
-                    await this.showStockAlert();
                 }
             }
         } catch (err) {
@@ -315,121 +313,6 @@ const app = {
             UI.updateBreakPreview();
         } catch (err) {
             console.error('Error loading break config:', err);
-        }
-    },
-
-    // ─── Stock del Día (Maestro) ──────────────────
-
-    _setupStockAlertListeners() {
-        document.getElementById('btn-stock-alert-close')?.addEventListener('click', () => {
-            document.getElementById('stock-alert-overlay').classList.add('hidden');
-        });
-
-        document.getElementById('btn-stock-sync')?.addEventListener('click', async () => {
-            const btn = document.getElementById('btn-stock-sync');
-            const originalHTML = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<span style="opacity:.6">Sincronizando...</span>';
-            try {
-                await API.get('/api/inventory/stock');
-                const status = await Store.loadStockStatus();
-                this._renderStockAlert(status);
-                UI.showSnackbar('Inventario sincronizado', 'success');
-            } catch (err) {
-                UI.showSnackbar('Error al sincronizar inventario', 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
-            }
-        });
-    },
-
-    async showStockAlert() {
-        if (Store.state.currentRole !== 'Maestro') return;
-        const overlay = document.getElementById('stock-alert-overlay');
-        if (!overlay) return;
-
-        // Fecha larga en español
-        const dateEl = document.getElementById('stock-alert-date');
-        if (dateEl) {
-            dateEl.textContent = new Date().toLocaleDateString('es-CL', {
-                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-            });
-        }
-
-        overlay.classList.remove('hidden');
-
-        try {
-            const status = await Store.loadStockStatus();
-            this._renderStockAlert(status);
-        } catch (err) {
-            console.error('Error loading stock status:', err);
-            document.getElementById('stock-alert-no-rules')?.classList.remove('hidden');
-        }
-    },
-
-    _renderStockAlert(status) {
-        const noInvEl   = document.getElementById('stock-alert-no-inv');
-        const noRulesEl = document.getElementById('stock-alert-no-rules');
-        const body      = document.getElementById('stock-alert-body');
-        if (!body) return;
-
-        noInvEl?.classList.toggle('hidden', status.has_inventory);
-        noRulesEl?.classList.toggle('hidden', status.total_reglas > 0);
-        body.innerHTML = '';
-
-        const buildRows = (items) => items.map(item => {
-            const stockDisplay = status.has_inventory
-                ? `<span class="stock-num ${item._type}">${item.stock} unid.</span>`
-                : `<span style="color:var(--text-muted);font-size:.8rem">Sin datos</span>`;
-            const threshold = item._type === 'critico'
-                ? `≤ ${item.stock_critico} (crítico)`
-                : item._type === 'bajo'
-                    ? `≤ ${item.stock_minimo} (mínimo)`
-                    : `OK — mín: ${item.stock_minimo}`;
-            return `<tr>
-                <td><span class="stock-alert-sku">${item.sku}</span></td>
-                <td>${stockDisplay}</td>
-                <td style="color:var(--text-secondary);font-size:.8rem">${threshold}</td>
-            </tr>`;
-        }).join('');
-
-        const renderSection = (items, type, label, icon) => {
-            if (!items.length) return;
-            const tagged = items.map(i => ({ ...i, _type: type }));
-            const section = document.createElement('div');
-            section.className = `stock-alert-section ${type}`;
-            section.innerHTML = `
-                <div class="stock-alert-section-header">
-                    ${icon}&nbsp;${label} (${items.length})
-                </div>
-                <table class="stock-alert-table">
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>Stock actual</th>
-                            <th>Umbral</th>
-                        </tr>
-                    </thead>
-                    <tbody>${buildRows(tagged)}</tbody>
-                </table>`;
-            body.appendChild(section);
-        };
-
-        renderSection(status.criticos, 'critico', 'STOCK CRÍTICO', '🔴');
-        renderSection(status.bajos,    'bajo',    'STOCK BAJO',    '🟡');
-        if (status.has_inventory) {
-            renderSection(status.ok, 'ok', 'STOCK NORMAL', '🟢');
-        }
-
-        // Si no hay nada que mostrar pero hay inventario y reglas → todo OK
-        if (!status.criticos.length && !status.bajos.length && status.total_reglas > 0 && status.has_inventory) {
-            body.innerHTML = `
-                <div style="text-align:center;padding:1.5rem 1rem;">
-                    <div style="font-size:2.5rem;margin-bottom:.5rem">✅</div>
-                    <p style="color:var(--text-primary);font-weight:600;margin-bottom:.25rem">Todo en orden</p>
-                    <p style="color:var(--text-secondary);font-size:.875rem">Todos los SKUs tienen stock sobre los umbrales configurados.</p>
-                </div>`;
         }
     },
 

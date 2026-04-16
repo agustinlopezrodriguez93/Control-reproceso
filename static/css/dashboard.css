@@ -429,7 +429,148 @@
 .sku-selector-code { font-family: monospace; font-size: .85rem; font-weight: 600; min-width: 7rem; color: var(--text-primary); }
 .sku-selector-desc { font-size: .85rem; color: var(--text-secondary); }
 
-/* ─── Stock Alert Overlay ───────────────────── */
+/* ─── Panel de Stock: KPI Grid ──────────────── */
+
+.sp-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+    .sp-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 640px) {
+    .sp-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.sp-kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem 1rem;
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.sp-kpi-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    margin-bottom: .5rem;
+}
+
+.sp-kpi-value {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.sp-kpi-label {
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-secondary);
+    margin-top: .3rem;
+}
+
+/* Colores por tipo */
+.sp-kpi-ok     .sp-kpi-value { color: #4ade80; }
+.sp-kpi-warn   .sp-kpi-value { color: #fbbf24; }
+.sp-kpi-danger .sp-kpi-value { color: #f87171; }
+.sp-kpi-zero   .sp-kpi-value { color: #94a3b8; }
+
+/* Estado de alerta activa */
+.sp-kpi-card.sp-card-alert {
+    border-color: rgba(239, 68, 68, 0.5);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.12);
+    animation: sp-pulse-danger 2s ease-in-out infinite;
+}
+
+.sp-kpi-card.sp-card-warn {
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.1);
+}
+
+@keyframes sp-pulse-danger {
+    0%, 100% { box-shadow: 0 0 16px rgba(239, 68, 68, 0.12); }
+    50%       { box-shadow: 0 0 24px rgba(239, 68, 68, 0.25); }
+}
+
+/* ─── Panel de Stock: Tabs ───────────────────── */
+
+.sp-tabs {
+    display: flex;
+    gap: .25rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1.25rem;
+}
+
+.sp-tab {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .65rem 1.1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: .875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+    margin-bottom: -1px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.sp-tab:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, .04);
+}
+
+.sp-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+}
+
+.sp-tab-panel {
+    /* Shown/hidden via .hidden */
+}
+
+/* ─── Panel de Stock: Tabla Estado ───────────── */
+
+.sp-sku-code {
+    font-family: monospace;
+    font-weight: 700;
+    font-size: .9rem;
+    color: var(--text-primary);
+}
+
+.sp-status-pill {
+    display: inline-block;
+    padding: .2rem .65rem;
+    border-radius: 999px;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.sp-status-stock-high { background: rgba(34,197,94,.15);  color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.sp-status-stock-med  { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+.sp-status-stock-low  { background: rgba(239,68,68,.15);  color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+.sp-status-stock-zero { background: rgba(148,163,184,.1); color: #94a3b8; border: 1px solid rgba(148,163,184,.2); }
+
+/* Row tint por severity */
+.sp-row-stock-low  td:first-child { border-left: 3px solid #f87171; }
+.sp-row-stock-med  td:first-child { border-left: 3px solid #fbbf24; }
+.sp-row-stock-zero td:first-child { border-left: 3px solid #475569; }
+
+/* ─── Stock Alert Overlay (legacy, kept for reference) ── */
 
 .stock-alert-card {
     max-width: 680px;
