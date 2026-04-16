@@ -17,7 +17,7 @@ from db import (
     crear_usuario, borrar_usuario, get_audit_logs, log_audit,
     get_dashboard_stats, get_operator_kpis, get_sku_human_resources,
     get_break_config, set_break_config, get_conn,
-    get_active_skus_full, set_active_skus
+    get_active_skus_full, set_active_skus, get_daily_report
 )
 from auth import (
     verify_password, verify_password_async, create_access_token,
@@ -40,6 +40,7 @@ class CrearProcesoRequest(BaseModel):
     operario: str
     sku_destino: str
     es_urgente: bool = False
+    stock_inicial: int = 0
 
 
 _VALID_ACTIONS = {"start", "pause", "resume", "finish"}
@@ -47,6 +48,7 @@ _VALID_ACTIONS = {"start", "pause", "resume", "finish"}
 
 class AccionProcesoRequest(BaseModel):
     accion: str
+    stock_final: Optional[int] = None
 
     @field_validator("accion")
     @classmethod
@@ -209,10 +211,10 @@ async def api_crear_proceso(
 
     proceso_id = str(uuid.uuid4())
     try:
-        proc = await crear_proceso(proceso_id, req.operario, req.sku_destino, req.es_urgente)
+        proc = await crear_proceso(proceso_id, req.operario, req.sku_destino, req.es_urgente, req.stock_inicial)
         await log_audit(
             current_user, "PROCESO_CREADO",
-            f"SKU: {req.sku_destino}, Operario: {req.operario}, Urgente: {req.es_urgente}"
+            f"SKU: {req.sku_destino}, Operario: {req.operario}, Urgente: {req.es_urgente}, Stock Inicial: {req.stock_inicial}"
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -259,8 +261,8 @@ async def api_actualizar_proceso(
                 pass  # Si ya estaba pausado o finalizado, continuar sin error
 
     try:
-        updated = await actualizar_estado(proceso_id, req.accion)
-        await log_audit(current_user, f"PROCESO_{req.accion.upper()}", f"ID: {proceso_id}")
+        updated = await actualizar_estado(proceso_id, req.accion, req.stock_final)
+        await log_audit(current_user, f"PROCESO_{req.accion.upper()}", f"ID: {proceso_id}, Stock Final: {req.stock_final if req.accion == 'finish' else '-'}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -366,6 +368,14 @@ async def api_delete_user(user_id: int, maestro=Depends(require_maestro)):
         f"ID: {user_id}, Nombre: {target_user['nombre'] if target_user else 'desconocido'}"
     )
     return {"ok": True}
+
+
+# ─── Reports (Maestro Only) ───────────────────
+
+@router.get("/reports/daily")
+async def api_daily_report(maestro=Depends(require_maestro)):
+    """Informe diario consolidado para gerencia."""
+    return await get_daily_report()
 
 
 # ─── Audit Logs (Maestro Only) ────────────────

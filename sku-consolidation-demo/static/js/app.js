@@ -95,6 +95,7 @@ const app = {
         e.preventDefault();
 
         const skuDest = document.getElementById('input-sku-dest').value.trim();
+        const stockInicial = parseInt(document.getElementById('input-stock-inicial').value) || 0;
         const operator = Store.state.currentUser;
 
         if (!skuDest) {
@@ -104,7 +105,7 @@ const app = {
         }
 
         try {
-            const result = await Store.createProcess(operator, skuDest);
+            const result = await Store.createProcess(operator, skuDest, false, stockInicial);
             UI.showSnackbar('Proceso creado exitosamente');
             UI.navigateTo('view-detail', result.proceso.id);
         } catch (err) {
@@ -173,10 +174,11 @@ const app = {
 
     handleFinish() {
         const id = UI.currentDetailId;
-        UI.showModal('Finalizar Proceso', '¿Confirma que desea cerrar el proceso? No se podrán realizar más cambios.', async () => {
+
+        UI.showPrompt('Finalizar Proceso', 'Ingresa la cantidad física final (Stock Final) para cerrar el proceso:', 'number', async (stockFinal) => {
             await this.withLoading('modal-btn-confirm', async () => {
                 try {
-                    await Store.updateProcessState(id, 'finish');
+                    await Store.updateProcessState(id, 'finish', parseInt(stockFinal));
                     UI.showSnackbar('FINALIZADO correctamente', 'success');
                     UI.navigateTo('view-dashboard', true);
                     UI.checkGlobalUrgency();

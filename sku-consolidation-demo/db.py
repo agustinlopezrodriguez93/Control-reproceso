@@ -101,7 +101,9 @@ CREATE TABLE IF NOT EXISTS reproceso_procesos (
     created_at        TIMESTAMPTZ DEFAULT NOW(),
     started_at        TIMESTAMPTZ,
     finished_at       TIMESTAMPTZ,
-    last_state_change TIMESTAMPTZ DEFAULT NOW()
+    last_state_change TIMESTAMPTZ DEFAULT NOW(),
+    stock_inicial     INTEGER,
+    stock_final       INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS reproceso_pausas (
@@ -149,6 +151,16 @@ async def init_db():
         if not col_exists:
             logger.info("[DB] Migración: añadiendo columna password_hash...")
             await conn.execute("ALTER TABLE reproceso_usuarios ADD COLUMN password_hash TEXT")
+
+        # Migración: agregar stock_inicial y stock_final
+        stocks_exist = await conn.fetchval("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'reproceso_procesos' AND column_name = 'stock_inicial'
+        """)
+        if not stocks_exist:
+            logger.info("[DB] Migración: añadiendo columnas de stock...")
+            await conn.execute("ALTER TABLE reproceso_procesos ADD COLUMN stock_inicial INTEGER")
+            await conn.execute("ALTER TABLE reproceso_procesos ADD COLUMN stock_final INTEGER")
 
         # Seed usuarios
         user_count = await conn.fetchval("SELECT COUNT(*) FROM reproceso_usuarios")
@@ -377,7 +389,7 @@ async def get_proceso(proceso_id: str) -> dict | None:
 
 
 async def crear_proceso(
-    proceso_id: str, operario_nombre: str, sku_destino: str, es_urgente: bool = False
+    proceso_id: str, operario_nombre: str, sku_destino: str, es_urgente: bool = False, stock_inicial: int = 0
 ) -> dict:
     """Crea un proceso y retorna el dict completo (sin segunda query)."""
     async with get_conn() as conn:
@@ -388,11 +400,11 @@ async def crear_proceso(
             raise ValueError(f"Operario '{operario_nombre}' no encontrado")
 
         row = await conn.fetchrow("""
-            INSERT INTO reproceso_procesos (id, operario_id, sku_destino, estado, es_urgente)
-            VALUES ($1, $2, $3, 'CREADO', $4)
+            INSERT INTO reproceso_procesos (id, operario_id, sku_destino, estado, es_urgente, stock_inicial)
+            VALUES ($1, $2, $3, 'CREADO', $4, $5)
             RETURNING id, operario_id, sku_destino, estado, es_urgente,
-                      created_at, started_at, finished_at, last_state_change
-        """, proceso_id, user_id, sku_destino, es_urgente)
+                      created_at, started_at, finished_at, last_state_change, stock_inicial
+        """, proceso_id, user_id, sku_destino, es_urgente, stock_inicial)
 
         result = dict(row)
         result["operario_nombre"] = operario_nombre
@@ -400,7 +412,7 @@ async def crear_proceso(
         return result
 
 
-async def actualizar_estado(proceso_id: str, nueva_accion: str) -> dict:
+async def actualizar_estado(proceso_id: str, nueva_accion: str, stock_final: int = None) -> dict:
     """Actualiza estado y retorna el proceso completo — todo en una sola conexión."""
     async with get_conn() as conn:
         row = await conn.fetchrow(
@@ -461,9 +473,9 @@ async def actualizar_estado(proceso_id: str, nueva_accion: str) -> dict:
                     """, proceso_id)
                 await conn.execute("""
                     UPDATE reproceso_procesos
-                    SET estado = 'FINALIZADO', finished_at = NOW(), last_state_change = NOW()
+                    SET estado = 'FINALIZADO', finished_at = NOW(), last_state_change = NOW(), stock_final = $2
                     WHERE id = $1
-                """, proceso_id)
+                """, proceso_id, stock_final)
 
         # Leer el proceso actualizado en la misma conexión (sin segundo round-trip TCP)
         updated = dict(await conn.fetchrow("""
@@ -688,3 +700,61 @@ async def set_break_config(enabled: bool, work_minutes: int, rest_minutes: int) 
                 str(rest_minutes)
             )
     return {"enabled": enabled, "work_minutes": work_minutes, "rest_minutes": rest_minutes}
+
+
+async def get_daily_report() -> dict:
+    """
+    Obtiene los datos consolidados para el informe de gerencia del día actual.
+    """
+    async with get_conn() as conn:
+        # 1. Productos procesados hoy (detalles por proceso)
+        procesos_hoy = await conn.fetch("""
+            SELECT
+                p.sku_destino,
+                u.nombre as operario,
+                p.stock_inicial,
+                p.stock_final,
+                p.es_urgente,
+                p.started_at,
+                p.finished_at,
+                EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60 AS duracion_min
+            FROM reproceso_procesos p
+            JOIN reproceso_usuarios u ON u.id = p.operario_id
+            WHERE p.created_at >= CURRENT_DATE
+            ORDER BY p.created_at ASC
+        """)
+
+        # 2. Resumen por SKU (agregado)
+        resumen_sku = await conn.fetch("""
+            SELECT
+                sku_destino,
+                COUNT(*) as cantidad_procesos,
+                SUM(stock_final - stock_inicial) as unidades_reprocesadas,
+                AVG(EXTRACT(EPOCH FROM (p.finished_at - p.started_at)) / 60) as tiempo_promedio_min
+            FROM reproceso_procesos p
+            WHERE p.created_at >= CURRENT_DATE AND p.estado = 'FINALIZADO'
+            GROUP BY sku_destino
+        """)
+
+        # 3. Operarios activos hoy
+        operarios_hoy = await conn.fetch("""
+            SELECT DISTINCT u.nombre, u.avatar
+            FROM reproceso_procesos p
+            JOIN reproceso_usuarios u ON u.id = p.operario_id
+            WHERE p.created_at >= CURRENT_DATE
+        """)
+
+        # 4. Emergencias
+        emergencias = await conn.fetchval("""
+            SELECT COUNT(*) FROM reproceso_procesos
+            WHERE created_at >= CURRENT_DATE AND es_urgente = TRUE
+        """)
+
+    return {
+        "fecha": "Hoy",
+        "procesos": [dict(r) for r in procesos_hoy],
+        "resumen_sku": [dict(r) for r in resumen_sku],
+        "operarios": [dict(r) for r in operarios_hoy],
+        "total_emergencias": emergencias or 0,
+        "total_procesos": len(procesos_hoy)
+    }
