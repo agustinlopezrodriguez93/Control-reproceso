@@ -558,6 +558,69 @@ async def api_set_active_skus(body: ActiveSkusIn, maestro=Depends(require_maestr
     return {"saved": len(body.skus)}
 
 
+@router.get("/stock-status")
+async def api_stock_status(maestro=Depends(require_maestro)):
+    """
+    Estado del stock del día para Maestros.
+    Cruza las reglas de stock configuradas con el caché de inventario Laudus.
+    No dispara una nueva llamada a Laudus — usa solo el caché existente.
+    """
+    async with get_conn() as conn:
+        rule_rows = await conn.fetch(
+            "SELECT sku, stock_minimo, stock_critico FROM stock_rules ORDER BY sku"
+        )
+
+    rules: dict = {
+        r["sku"].upper(): {
+            "stock_minimo": r["stock_minimo"],
+            "stock_critico": r["stock_critico"],
+        }
+        for r in rule_rows
+    }
+
+    # Usar caché de inventario sin disparar llamada a Laudus
+    inventory_data = _inventory_cache.get("data")
+    stock_map: dict = {}
+    if inventory_data:
+        for item in inventory_data:
+            sku = (item.get("sku") or "").strip().upper()
+            if sku:
+                stock_map[sku] = item.get("stock", 0)
+
+    criticos, bajos, ok, sin_datos = [], [], [], []
+
+    for sku, rule in rules.items():
+        if sku in stock_map:
+            stock_val = stock_map[sku]
+            entry = {
+                "sku": sku,
+                "stock": stock_val,
+                "stock_minimo": rule["stock_minimo"],
+                "stock_critico": rule["stock_critico"],
+            }
+            if stock_val <= rule["stock_critico"]:
+                criticos.append(entry)
+            elif stock_val <= rule["stock_minimo"]:
+                bajos.append(entry)
+            else:
+                ok.append(entry)
+        else:
+            sin_datos.append({
+                "sku": sku,
+                "stock_minimo": rule["stock_minimo"],
+                "stock_critico": rule["stock_critico"],
+            })
+
+    return {
+        "has_inventory": bool(inventory_data),
+        "criticos": sorted(criticos, key=lambda x: x["stock"]),
+        "bajos": sorted(bajos, key=lambda x: x["stock"]),
+        "ok": sorted(ok, key=lambda x: x["sku"]),
+        "sin_datos": sorted(sin_datos, key=lambda x: x["sku"]),
+        "total_reglas": len(rules),
+    }
+
+
 @router.get("/laudus/products")
 async def api_laudus_products(maestro=Depends(require_maestro)):
     """Devuelve todos los productos de Laudus (productId, sku, description) — para el selector."""

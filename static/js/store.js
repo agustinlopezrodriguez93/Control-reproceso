@@ -167,6 +167,10 @@ const Store = {
         });
     },
 
+    async loadStockStatus() {
+        return await API.get('/api/stock-status');
+    },
+
     getSortedProcesses() {
         const statusWeight = {
             [ProcessState.STARTED]: 4,
