@@ -10,7 +10,8 @@
     display: none !important;
 }
 
-#maestro-shell[style*="display: flex"] {
+#maestro-shell[style*="display: flex"],
+body.maestro-mode #maestro-shell {
     display: flex !important;
 }
 
