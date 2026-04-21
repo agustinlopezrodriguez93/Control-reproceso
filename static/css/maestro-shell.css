@@ -4,6 +4,16 @@
  * No afecta la vista de operarios.
  */
 
+/* ─── Maestro Shell (hidden by default, shown on mount) ──────── */
+
+#maestro-shell {
+    display: none !important;
+}
+
+#maestro-shell[style*="display: flex"] {
+    display: flex !important;
+}
+
 /* ─── Body override en modo Maestro ──────────── */
 
 body.maestro-mode #app-container {
