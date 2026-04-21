@@ -1,0 +1,160 @@
+/**
+ * maestro-shell.css — Layout de sidebar + contenido para el rol Maestro
+ * Se activa añadiendo la clase .maestro-mode al body.
+ * No afecta la vista de operarios.
+ */
+
+/* ─── Body override en modo Maestro ──────────── */
+
+body.maestro-mode #app-container {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+    flex-direction: row;
+    overflow: hidden;
+    height: calc(100vh - 64px);
+}
+
+/* ─── Sidebar ─────────────────────────────────── */
+
+.maestro-sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: #151f32;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    height: 100%;
+    flex-shrink: 0;
+}
+
+.maestro-sidebar-section {
+    padding: 1.25rem 0.75rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.maestro-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem;
+    margin: 0.1rem 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border: none;
+    background: none;
+    width: calc(100% - 1rem);
+    text-align: left;
+    transition: background 0.15s, color 0.15s;
+}
+
+.maestro-nav-item:hover {
+    background: rgba(255,255,255,0.06);
+    color: var(--text-primary);
+}
+
+.maestro-nav-item.active {
+    background: rgba(59, 130, 246, 0.18);
+    color: var(--primary-light);
+}
+
+.maestro-nav-item svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.maestro-nav-item.active svg {
+    opacity: 1;
+}
+
+.maestro-nav-badge {
+    margin-left: auto;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 20px;
+    min-width: 18px;
+    text-align: center;
+    display: none;
+}
+
+.maestro-nav-badge.visible {
+    display: inline-block;
+}
+
+/* ─── Main content area ───────────────────────── */
+
+.maestro-main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.75rem 2rem;
+    background: var(--bg-body);
+}
+
+/* ─── Panel header ────────────────────────────── */
+
+.maestro-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.maestro-panel-title {
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.maestro-panel-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+}
+
+/* ─── Panels ──────────────────────────────────── */
+
+.maestro-panel {
+    display: none;
+}
+
+.maestro-panel.active {
+    display: block;
+    animation: fade-in 0.2s ease-out;
+}
+
+/* ─── Refresh indicator ───────────────────────── */
+
+.maestro-refresh-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-color);
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+}
+
+.maestro-refresh-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+}
+
+.maestro-refresh-dot.refreshing {
+    animation: pulse-animation 1s infinite;
+}

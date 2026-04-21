@@ -76,9 +76,9 @@ const UI = {
     navigateTo(viewId, contextId = null) {
         this._autoPauseOnLeaveDetail(viewId, contextId);
 
-        // Limpiar recursos de Admin Dashboard si estamos navegando away
+        // Si salimos del Centro de Mando, desmontar el shell
         if (this.currentViewId === 'view-dashboard' && viewId !== 'view-dashboard') {
-            ViewAdminDashboard?.unload?.();
+            MaestroShell?.unmount?.();
         }
 
         document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
@@ -97,43 +97,18 @@ const UI = {
         if (viewId === 'view-dashboard') {
             const isMaestro = Store.state.currentRole === 'Maestro';
             if (isMaestro) {
-                // Mostrar Admin Control Dashboard para Maestro
-                document.getElementById('operario-processes-card').style.display = 'none';
-                document.getElementById('admin-dashboard-container').style.display = 'block';
-                document.getElementById('header-operario-actions').style.display = 'none';
-                document.getElementById('view-dashboard-header').querySelector('h1').textContent = 'Control Admin';
-                ViewAdminDashboard.load();
+                MaestroShell.mount();
             } else {
-                // Mostrar tabla de procesos para Operarios
-                document.getElementById('operario-processes-card').style.display = 'block';
-                document.getElementById('admin-dashboard-container').style.display = 'none';
-                document.getElementById('header-operario-actions').style.display = 'flex';
-                document.getElementById('view-dashboard-header').querySelector('h1').textContent = 'Mis Procesos';
+                // Operario: asegurar shell operario visible y limpio
+                document.getElementById('operario-shell').style.display = '';
+                document.getElementById('maestro-shell').style.display  = 'none';
+                document.body.classList.remove('maestro-mode');
                 ViewDashboard.render(contextId === true);
             }
         } else if (viewId === 'view-create') {
             this.resetForm();
         } else if (viewId === 'view-detail' && contextId) {
             ViewDetail.render(contextId);
-        } else if (viewId === 'view-users') {
-            ViewUsers.render();
-            app.loadBreakConfig();
-        } else if (viewId === 'view-audit') {
-            ViewUsers.renderAudit();
-        } else if (viewId === 'view-performance') {
-            ViewPerformance.render();
-        } else if (viewId === 'view-stock-panel') {
-            ViewStockPanel.render();
-        } else if (viewId === 'view-reports') {
-            ViewReports.render();
-        } else if (viewId === 'view-planning') {
-            ViewPlanning.render();
-        } else if (viewId === 'view-optimization') {
-            ViewOptimization.render();
-        } else if (viewId === 'view-dashboard-maestro') {
-            ViewDashboardMaestro.load();
-        } else if (viewId === 'view-stock-projection') {
-            ViewStockProjection.load();
         }
     },
 

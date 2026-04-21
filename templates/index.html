@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/login.css?v=9">
     <link rel="stylesheet" href="/static/css/dashboard.css?v=9">
     <link rel="stylesheet" href="/static/css/admin-dashboard.css?v=1">
+    <link rel="stylesheet" href="/static/css/maestro-shell.css?v=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -132,49 +133,292 @@
             </div>
         </section>
 
-        <!-- View: Dashboard (Operarios) / Admin Control Dashboard (Maestro) -->
+        <!-- View: Dashboard -->
         <section id="view-dashboard" class="view hidden">
-            <div class="view-header" id="view-dashboard-header">
-                <h1>Mis Procesos</h1>
-                <div class="header-actions" id="header-operario-actions">
+
+            <!-- ══ OPERARIOS: tabla simple ══ -->
+            <div id="operario-shell" style="padding:2rem;max-width:1200px;margin:0 auto;">
+                <div class="view-header">
+                    <h1>Mis Procesos</h1>
                     <button id="btn-new-process" class="btn btn-primary">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path d="M12 5v14M5 12h14" />
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M5 12h14"/>
                         </svg>
                         Nuevo Proceso
                     </button>
                 </div>
-            </div>
-
-            <!-- Operarios: Tabla de procesos -->
-            <div id="operario-processes-card" class="card">
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>SKU Destino</th>
-                                <th>Operario</th>
-                                <th>Estado</th>
-                                <th>Tiempo Total</th>
-                                <th>Prioridad</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="process-list-body">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                </div>
-                <div id="empty-state" class="empty-state hidden">
-                    <p>No hay procesos registrados.</p>
+                <div class="card">
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>SKU Destino</th>
+                                    <th>Operario</th>
+                                    <th>Estado</th>
+                                    <th>Tiempo Total</th>
+                                    <th>Prioridad</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="process-list-body"></tbody>
+                        </table>
+                    </div>
+                    <div id="empty-state" class="empty-state hidden">
+                        <p>No hay procesos registrados.</p>
+                    </div>
                 </div>
             </div>
 
-            <!-- Maestro: Admin Control Dashboard -->
-            <div id="admin-dashboard-container" style="display:none;">
-                <!-- Populated by ViewAdminDashboard -->
-            </div>
+            <!-- ══ MAESTRO: Centro de Mando ══ -->
+            <div id="maestro-shell" style="display:none;height:100%;display:flex;flex-direction:row;">
+
+                <!-- Sidebar -->
+                <nav class="maestro-sidebar" id="maestro-sidebar">
+                    <div class="maestro-sidebar-section">Monitor</div>
+
+                    <button class="maestro-nav-item active" data-panel="resumen">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        Resumen
+                        <span class="maestro-nav-badge" id="badge-urgencias">0</span>
+                    </button>
+
+                    <button class="maestro-nav-item" data-panel="procesos">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        Procesos Activos
+                    </button>
+
+                    <div class="maestro-sidebar-section">Producción</div>
+
+                    <button class="maestro-nav-item" data-panel="planificacion">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        Planificación
+                    </button>
+
+                    <button class="maestro-nav-item" data-panel="optimizacion">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                        Optimización
+                    </button>
+
+                    <div class="maestro-sidebar-section">Inventario</div>
+
+                    <button class="maestro-nav-item" data-panel="stock">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="5" rx="1"/><path d="M2 8v13h20V8"/><path d="M10 12h4"/>
+                        </svg>
+                        Panel de Stock
+                    </button>
+
+                    <button class="maestro-nav-item" data-panel="proyeccion">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/>
+                            <polyline points="17 6 23 6 23 12"/>
+                        </svg>
+                        Proyección Stock
+                    </button>
+
+                    <div class="maestro-sidebar-section">Análisis</div>
+
+                    <button class="maestro-nav-item" data-panel="rendimiento">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 20V10M12 20V4M6 20v-6"/>
+                        </svg>
+                        Rendimiento
+                    </button>
+
+                    <button class="maestro-nav-item" data-panel="informes">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        Informes
+                    </button>
+
+                    <div class="maestro-sidebar-section">Admin</div>
+
+                    <button class="maestro-nav-item" data-panel="usuarios">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        Usuarios
+                    </button>
+
+                    <button class="maestro-nav-item" data-panel="auditoria">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        Auditoría
+                    </button>
+                </nav>
+
+                <!-- Main content -->
+                <div class="maestro-main" id="maestro-main">
+
+                    <!-- Panel: Resumen (KPIs + operarias) -->
+                    <div class="maestro-panel active" id="maestro-panel-resumen">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Resumen del Día</div>
+                                <div class="maestro-panel-subtitle" id="maestro-fecha-label"></div>
+                            </div>
+                            <div class="maestro-refresh-chip">
+                                <div class="maestro-refresh-dot" id="maestro-refresh-dot"></div>
+                                <span id="maestro-last-update">—</span>
+                            </div>
+                        </div>
+                        <div id="maestro-resumen-body">
+                            <p style="color:var(--text-muted)">Cargando...</p>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Procesos Activos -->
+                    <div class="maestro-panel" id="maestro-panel-procesos">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Procesos Activos</div>
+                                <div class="maestro-panel-subtitle">Todos los procesos en planta ahora mismo</div>
+                            </div>
+                        </div>
+                        <div id="maestro-procesos-body">
+                            <p style="color:var(--text-muted)">Cargando...</p>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Planificación -->
+                    <div class="maestro-panel" id="maestro-panel-planificacion">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Planificación Semanal</div>
+                                <div class="maestro-panel-subtitle">Programá la producción por SKU y operaria</div>
+                            </div>
+                        </div>
+                        <div id="planning-container"><!-- ViewPlanning renderiza aquí --></div>
+                    </div>
+
+                    <!-- Panel: Optimización -->
+                    <div class="maestro-panel" id="maestro-panel-optimizacion">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Optimización de Asignación</div>
+                                <div class="maestro-panel-subtitle">Sugerencias basadas en velocidad histórica</div>
+                            </div>
+                        </div>
+                        <div id="optimization-container"><!-- ViewOptimization renderiza aquí --></div>
+                    </div>
+
+                    <!-- Panel: Stock -->
+                    <div class="maestro-panel" id="maestro-panel-stock">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Panel de Stock</div>
+                                <div class="maestro-panel-subtitle">Inventario, reglas, SKUs activos y tiempos</div>
+                            </div>
+                        </div>
+                        <!-- Tabs de stock-panel reutilizados -->
+                        <div id="sp-tabs-container">
+                            <div class="sp-tabs" style="display:flex;gap:.5rem;border-bottom:1px solid var(--border-color);margin-bottom:1.5rem;overflow-x:auto;">
+                                <button class="sp-tab-btn active" data-sp-tab="estado">Estado Stock</button>
+                                <button class="sp-tab-btn" data-sp-tab="reglas">Reglas</button>
+                                <button class="sp-tab-btn" data-sp-tab="productos">Productos Activos</button>
+                                <button class="sp-tab-btn" data-sp-tab="cargas">Cargas CSV</button>
+                                <button class="sp-tab-btn" data-sp-tab="tiempos">Tiempos Producción</button>
+                            </div>
+                            <div id="sp-tab-panels"><!-- ViewStockPanel renderiza aquí --></div>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Proyección de Stock -->
+                    <div class="maestro-panel" id="maestro-panel-proyeccion">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Proyección de Stock</div>
+                                <div class="maestro-panel-subtitle">Disponibilidad proyectada los próximos días</div>
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
+                            <label style="font-size:.85rem;color:var(--text-secondary);">Proyectar:</label>
+                            <input type="number" id="stock-projection-days" value="7" min="1" max="30"
+                                style="width:60px;padding:.25rem .5rem;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:var(--text-primary);">
+                            <span style="font-size:.8rem;color:var(--text-muted);">días</span>
+                            <button class="btn btn-primary btn-sm" id="stock-projection-calculate">Calcular</button>
+                        </div>
+                        <div id="stock-projection-table">
+                            <p style="color:var(--text-muted);font-size:.85rem;">Presioná "Calcular" para generar la proyección.</p>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Rendimiento -->
+                    <div class="maestro-panel" id="maestro-panel-rendimiento">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Rendimiento</div>
+                                <div class="maestro-panel-subtitle">KPIs históricos por operaria y SKU</div>
+                            </div>
+                        </div>
+                        <div id="performance-container"><!-- ViewPerformance renderiza aquí --></div>
+                    </div>
+
+                    <!-- Panel: Informes -->
+                    <div class="maestro-panel" id="maestro-panel-informes">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Informes Diarios</div>
+                                <div class="maestro-panel-subtitle">Resumen del día: procesos, stock y cumplimiento</div>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="window.print()">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 6 2 18 2 18 9"/>
+                                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                                    <rect x="6" y="14" width="12" height="8"/>
+                                </svg>
+                                Imprimir
+                            </button>
+                        </div>
+                        <div id="maestro-informes-body">
+                            <p style="color:var(--text-muted)">Cargando...</p>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Usuarios -->
+                    <div class="maestro-panel" id="maestro-panel-usuarios">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Gestión de Usuarios</div>
+                                <div class="maestro-panel-subtitle">Operarias, roles y configuración de pausas</div>
+                            </div>
+                        </div>
+                        <div id="users-container"><!-- ViewUsers renderiza aquí --></div>
+                    </div>
+
+                    <!-- Panel: Auditoría -->
+                    <div class="maestro-panel" id="maestro-panel-auditoria">
+                        <div class="maestro-panel-header">
+                            <div>
+                                <div class="maestro-panel-title">Auditoría</div>
+                                <div class="maestro-panel-subtitle">Log completo de acciones del sistema</div>
+                            </div>
+                        </div>
+                        <div id="audit-container"><!-- ViewUsers.renderAudit() renderiza aquí --></div>
+                    </div>
+
+                </div><!-- /maestro-main -->
+            </div><!-- /maestro-shell -->
+
         </section>
 
         <!-- View: Create Process -->
@@ -1069,6 +1313,7 @@
     <script src="/static/js/views/dashboard-maestro.js?v=1"></script>
     <script src="/static/js/views/stock-projection.js?v=1"></script>
     <script src="/static/js/views/admin-dashboard.js?v=1"></script>
+    <script src="/static/js/views/maestro-shell.js?v=1"></script>
     <script src="/static/js/ui.js?v=12"></script>
     <script src="/static/js/break-monitor.js?v=11"></script>
     <script src="/static/js/app.js?v=13"></script>

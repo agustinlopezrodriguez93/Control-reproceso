@@ -10,14 +10,8 @@ const ViewDashboard = {
         const currentRole = Store.state.currentRole;
         const isMaestro = currentRole === 'Maestro';
 
-        // Para Maestro: ocultar todos los botones antiguos (integrados en Admin Dashboard)
-        // Para Operarios: mostrar "Nuevo Proceso" únicamente
-        if (isMaestro) {
-            ['btn-view-performance', 'btn-view-users', 'btn-view-audit', 'btn-view-stock-panel', 'btn-view-reports', 'btn-view-planning', 'btn-view-optimization', 'btn-view-dashboard-maestro', 'btn-view-stock-projection'].forEach(id => {
-                const btn = document.getElementById(id);
-                if (btn) btn.classList.add('hidden');
-            });
-        }
+        // Maestro usa MaestroShell — esta función solo corre para operarios
+        if (isMaestro) return;
 
         const btnCreate = document.getElementById('btn-new-process');
         if (btnCreate) btnCreate.classList.toggle('hidden', isMaestro);
