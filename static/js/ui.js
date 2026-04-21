@@ -97,14 +97,23 @@ const UI = {
         if (viewId === 'view-dashboard') {
             const isMaestro = Store.state.currentRole === 'Maestro';
             console.log('[UI] navigateTo view-dashboard, isMaestro:', isMaestro, 'role:', Store.state.currentRole);
+
+            // Asegurar que maestro-shell siempre esté en el DOM
+            const maestroShell = document.getElementById('maestro-shell');
+            const operarioShell = document.getElementById('operario-shell');
+
             if (isMaestro) {
                 console.log('[UI] Calling MaestroShell.mount()');
+                // Mostrar maestro-shell, ocultar operario-shell
+                if (maestroShell) maestroShell.style.display = 'flex';
+                if (operarioShell) operarioShell.style.display = 'none';
+                document.body.classList.add('maestro-mode');
                 MaestroShell.mount();
             } else {
                 // Operario: asegurar shell operario visible y limpio
                 console.log('[UI] Setting up operario shell');
-                document.getElementById('operario-shell').style.display = '';
-                document.getElementById('maestro-shell').style.display  = 'none';
+                if (operarioShell) operarioShell.style.display = '';
+                if (maestroShell) maestroShell.style.display = 'none';
                 document.body.classList.remove('maestro-mode');
                 ViewDashboard.render(contextId === true);
             }

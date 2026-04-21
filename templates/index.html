@@ -35,6 +35,12 @@
                     <span class="name" id="current-user-name">Operario A</span>
                     <span class="role" id="current-user-role">Operador</span>
                 </div>
+                <button id="btn-home" class="btn btn-ghost" title="Ir al dashboard" onclick="UI.navigateTo('view-dashboard')" style="margin-right: 0.5rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                </button>
                 <button id="btn-logout" class="btn btn-ghost" title="Salir">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -170,7 +176,7 @@
             </div>
 
             <!-- ══ MAESTRO: Centro de Mando ══ -->
-            <div id="maestro-shell" style="height:100%;flex-direction:row;">
+            <div id="maestro-shell" style="height:100%;flex-direction:row;display:none;">
 
                 <!-- Sidebar -->
                 <nav class="maestro-sidebar" id="maestro-sidebar">

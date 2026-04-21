@@ -46,8 +46,21 @@ const MaestroShell = (() => {
         const maestroShell = document.getElementById('maestro-shell');
         console.log('[MaestroShell] operario-shell:', operarioShell, 'maestro-shell:', maestroShell);
 
-        if (operarioShell) operarioShell.style.display = 'none';
-        if (maestroShell) maestroShell.style.display = 'flex';
+        if (operarioShell) {
+            operarioShell.style.display = 'none';
+            console.log('[MaestroShell] Hidden operario-shell');
+        }
+        if (maestroShell) {
+            maestroShell.style.display = 'flex';
+            // Double-check after short delay to ensure CSS doesn't override
+            setTimeout(() => {
+                if (maestroShell.style.display !== 'flex') {
+                    maestroShell.style.display = 'flex';
+                    console.log('[MaestroShell] Re-enforced display:flex after timeout');
+                }
+            }, 50);
+            console.log('[MaestroShell] Showing maestro-shell with display:flex');
+        }
 
         // Wiring del sidebar (solo una vez)
         if (!_wired) {
