@@ -31,12 +31,18 @@ const MaestroShell = (() => {
     // ─── Entrada principal ────────────────────────────────────────────────────
 
     async function mount() {
+        console.log('[MaestroShell] mount() called');
+
         // Activar modo Maestro en body (CSS layout)
         document.body.classList.add('maestro-mode');
 
         // Mostrar shell Maestro, ocultar shell Operario
-        document.getElementById('operario-shell').style.display = 'none';
-        document.getElementById('maestro-shell').style.display  = 'flex';
+        const operarioShell = document.getElementById('operario-shell');
+        const maestroShell = document.getElementById('maestro-shell');
+        console.log('[MaestroShell] operario-shell:', operarioShell, 'maestro-shell:', maestroShell);
+
+        if (operarioShell) operarioShell.style.display = 'none';
+        if (maestroShell) maestroShell.style.display = 'flex';
 
         // Wiring del sidebar (solo una vez)
         if (!_wired) {

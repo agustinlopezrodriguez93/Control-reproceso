@@ -96,10 +96,13 @@ const UI = {
 
         if (viewId === 'view-dashboard') {
             const isMaestro = Store.state.currentRole === 'Maestro';
+            console.log('[UI] navigateTo view-dashboard, isMaestro:', isMaestro, 'role:', Store.state.currentRole);
             if (isMaestro) {
+                console.log('[UI] Calling MaestroShell.mount()');
                 MaestroShell.mount();
             } else {
                 // Operario: asegurar shell operario visible y limpio
+                console.log('[UI] Setting up operario shell');
                 document.getElementById('operario-shell').style.display = '';
                 document.getElementById('maestro-shell').style.display  = 'none';
                 document.body.classList.remove('maestro-mode');
