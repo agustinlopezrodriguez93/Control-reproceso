@@ -51,10 +51,12 @@ const MaestroShell = (() => {
         // Cargar panel inicial
         await navigateTo('resumen');
 
-        // Auto-refresh Resumen cada 30 s
-        _refreshInterval = setInterval(() => {
-            if (_activePanel === 'resumen') _loadResumen(true);
-        }, 30000);
+        // Auto-refresh Resumen cada 30 s (evitar duplicados)
+        if (!_refreshInterval) {
+            _refreshInterval = setInterval(() => {
+                if (_activePanel === 'resumen') _loadResumen(true);
+            }, 30000);
+        }
     }
 
     function unmount() {

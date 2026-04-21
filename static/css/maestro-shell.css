@@ -158,3 +158,8 @@ body.maestro-mode #app-container {
 .maestro-refresh-dot.refreshing {
     animation: pulse-animation 1s infinite;
 }
+
+/* Ocultar botones "volver" internos de cada vista cuando están dentro del shell */
+.maestro-main .btn-back {
+    display: none !important;
+}
