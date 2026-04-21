@@ -22,7 +22,7 @@ const app = {
 
         if (loggedIn) {
             if (Store.state.currentRole === 'Maestro') {
-                UI.navigateTo('view-stock-panel');
+                UI.navigateTo('view-dashboard');
             } else {
                 UI.navigateTo('view-dashboard');
                 BreakMonitor.init();
@@ -48,7 +48,7 @@ const app = {
             if (ok) {
                 UI.showSnackbar(`Bienvenido, ${Store.state.currentUser}`);
                 if (Store.state.currentRole === 'Maestro') {
-                    UI.navigateTo('view-stock-panel');
+                    UI.navigateTo('view-dashboard');
                 } else {
                     UI.navigateTo('view-dashboard');
                     BreakMonitor.init();
