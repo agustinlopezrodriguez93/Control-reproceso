@@ -11,6 +11,7 @@ const MaestroShell = (() => {
     let _refreshInterval = null;
     let _loadedPanels = new Set();
     let _wired = false;
+    let _isMounted = false;
 
     // ─── Configuración de paneles ─────────────────────────────────────────────
     // Cada entrada define cómo inicializar el panel la primera vez y si se
@@ -31,6 +32,10 @@ const MaestroShell = (() => {
     // ─── Entrada principal ────────────────────────────────────────────────────
 
     async function mount() {
+        if (_isMounted) {
+            console.log('[MaestroShell] Already mounted, skipping');
+            return;
+        }
         console.log('[MaestroShell] mount() called');
 
         // Activar modo Maestro en body (CSS layout)
@@ -63,13 +68,17 @@ const MaestroShell = (() => {
                 if (_activePanel === 'resumen') _loadResumen(true);
             }, 30000);
         }
+
+        _isMounted = true;
     }
 
     function unmount() {
+        console.log('[MaestroShell] unmount() called');
         document.body.classList.remove('maestro-mode');
         if (_refreshInterval) { clearInterval(_refreshInterval); _refreshInterval = null; }
         _loadedPanels.clear();
         _activePanel = 'resumen';
+        _isMounted = false;
         // _wired stays true — listeners survive DOM persistence; reset only if shell is rebuilt
     }
 
