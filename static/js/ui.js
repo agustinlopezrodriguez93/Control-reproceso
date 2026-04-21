@@ -76,6 +76,11 @@ const UI = {
     navigateTo(viewId, contextId = null) {
         this._autoPauseOnLeaveDetail(viewId, contextId);
 
+        // Limpiar recursos de Admin Dashboard si estamos navegando away
+        if (this.currentViewId === 'view-dashboard' && viewId !== 'view-dashboard') {
+            ViewAdminDashboard?.unload?.();
+        }
+
         document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
         document.getElementById(viewId).classList.remove('hidden');
         this.currentViewId = viewId;
@@ -90,7 +95,22 @@ const UI = {
         }
 
         if (viewId === 'view-dashboard') {
-            ViewDashboard.render(contextId === true);
+            const isMaestro = Store.state.currentRole === 'Maestro';
+            if (isMaestro) {
+                // Mostrar Admin Control Dashboard para Maestro
+                document.getElementById('operario-processes-card').style.display = 'none';
+                document.getElementById('admin-dashboard-container').style.display = 'block';
+                document.getElementById('header-operario-actions').style.display = 'none';
+                document.getElementById('view-dashboard-header').querySelector('h1').textContent = 'Control Admin';
+                ViewAdminDashboard.load();
+            } else {
+                // Mostrar tabla de procesos para Operarios
+                document.getElementById('operario-processes-card').style.display = 'block';
+                document.getElementById('admin-dashboard-container').style.display = 'none';
+                document.getElementById('header-operario-actions').style.display = 'flex';
+                document.getElementById('view-dashboard-header').querySelector('h1').textContent = 'Mis Procesos';
+                ViewDashboard.render(contextId === true);
+            }
         } else if (viewId === 'view-create') {
             this.resetForm();
         } else if (viewId === 'view-detail' && contextId) {
@@ -110,6 +130,10 @@ const UI = {
             ViewPlanning.render();
         } else if (viewId === 'view-optimization') {
             ViewOptimization.render();
+        } else if (viewId === 'view-dashboard-maestro') {
+            ViewDashboardMaestro.load();
+        } else if (viewId === 'view-stock-projection') {
+            ViewStockProjection.load();
         }
     },
 
@@ -546,6 +570,12 @@ const UI = {
 
         const btnOptimization = document.getElementById('btn-view-optimization');
         if (btnOptimization) btnOptimization.onclick = () => UI.navigateTo('view-optimization');
+
+        const btnDashboardMaestro = document.getElementById('btn-view-dashboard-maestro');
+        if (btnDashboardMaestro) btnDashboardMaestro.onclick = () => UI.navigateTo('view-dashboard-maestro');
+
+        const btnStockProjection = document.getElementById('btn-view-stock-projection');
+        if (btnStockProjection) btnStockProjection.onclick = () => UI.navigateTo('view-stock-projection');
 
         document.getElementById('create-process-form').onsubmit = (e) => app.createProcess(e);
 

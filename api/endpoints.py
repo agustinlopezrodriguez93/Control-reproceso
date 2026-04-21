@@ -85,6 +85,13 @@ class BreakConfigRequest(BaseModel):
         return v
 
 
+class ProductTimeIn(BaseModel):
+    minutos_por_caja: float
+    minutos_por_unidad: Optional[float] = None
+    factor_empaque: int = 1
+    categoria: str = ""
+
+
 # ─── Dependencies ──────────────────────────────
 
 async def require_maestro(token_data: dict = Depends(get_current_user_with_role)):
@@ -650,12 +657,33 @@ async def api_laudus_products(maestro=Depends(require_maestro)):
 
 @router.get("/product-times")
 async def api_get_product_times(maestro=Depends(require_maestro)):
-    """Retorna tiempos de producción por SKU (minutos por caja)."""
+    """Retorna tiempos de producción por SKU con nuevas columnas: minutos_por_unidad, factor_empaque, categoria."""
     async with get_conn() as conn:
         rows = await conn.fetch(
-            "SELECT sku, minutos_por_caja, updated_at FROM product_times ORDER BY sku"
+            "SELECT sku, minutos_por_caja, minutos_por_unidad, factor_empaque, categoria, updated_at FROM product_times ORDER BY categoria, sku"
         )
     return {"times": [dict(r) for r in rows]}
+
+
+@router.put("/product-times/{sku}")
+async def api_update_product_time(sku: str, body: ProductTimeIn, maestro=Depends(require_maestro)):
+    """Actualiza o crea un registro de tiempo de producción (UPSERT). Maestro only."""
+    sku = sku.upper()
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO product_times (sku, minutos_por_caja, minutos_por_unidad, factor_empaque, categoria)
+               VALUES ($1,$2,$3,$4,$5)
+               ON CONFLICT (sku) DO UPDATE SET
+                   minutos_por_caja=EXCLUDED.minutos_por_caja,
+                   minutos_por_unidad=EXCLUDED.minutos_por_unidad,
+                   factor_empaque=EXCLUDED.factor_empaque,
+                   categoria=EXCLUDED.categoria,
+                   updated_at=NOW()
+               RETURNING sku, minutos_por_caja, minutos_por_unidad, factor_empaque, categoria, updated_at""",
+            sku, body.minutos_por_caja, body.minutos_por_unidad,
+            body.factor_empaque, body.categoria
+        )
+    return dict(row) if row else {}
 
 
 # ─── CSV Upload ───────────────────────────────
@@ -733,7 +761,8 @@ async def upload_tiempos_csv(
 ):
     """
     Carga masiva de tiempos de producción desde CSV.
-    Formato esperado: sku,minutos_por_caja
+    Columnas requeridas: sku, minutos_por_caja
+    Columnas opcionales: minutos_por_unidad, factor_empaque, categoria
     Reemplaza (upsert) los registros presentes en el CSV.
     """
     if not file.filename.endswith(".csv"):
@@ -767,22 +796,46 @@ async def upload_tiempos_csv(
             mins = float((row.get("minutos_por_caja") or "").strip().replace(",", "."))
         except (ValueError, AttributeError):
             continue
+
+        # Columnas opcionales
+        mpu = None
+        try:
+            mpu_str = (row.get("minutos_por_unidad") or row.get("Minutos_por_unidad") or "").strip()
+            if mpu_str:
+                mpu = float(mpu_str.replace(",", "."))
+        except (ValueError, AttributeError):
+            pass
+
+        factor = 1
+        try:
+            fe_str = (row.get("factor_empaque") or row.get("Factor_empaque") or "").strip()
+            if fe_str:
+                factor = int(fe_str)
+        except (ValueError, AttributeError):
+            pass
+
+        categoria = (row.get("categoria") or row.get("Categoria") or "").strip()
+
         if not sku or mins < 0:
             continue
-        rows.append((sku, mins))
+        rows.append((sku, mins, mpu, factor, categoria))
 
     if not rows:
         raise HTTPException(status_code=400, detail="El CSV no contiene filas válidas")
 
     async with get_conn() as conn:
         async with conn.transaction():
-            for sku, mins in rows:
+            for sku, mins, mpu, factor, cat in rows:
                 await conn.execute(
-                    """INSERT INTO product_times (sku, minutos_por_caja)
-                       VALUES ($1, $2)
+                    """INSERT INTO product_times (sku, minutos_por_caja, minutos_por_unidad, factor_empaque, categoria)
+                       VALUES ($1, $2, $3, $4, $5)
                        ON CONFLICT (sku) DO UPDATE
-                       SET minutos_por_caja = EXCLUDED.minutos_por_caja, updated_at = NOW()""",
-                    sku, mins
+                       SET minutos_por_caja = EXCLUDED.minutos_por_caja,
+                           minutos_por_unidad = EXCLUDED.minutos_por_unidad,
+                           factor_empaque = EXCLUDED.factor_empaque,
+                           categoria = EXCLUDED.categoria,
+                           updated_at = NOW()""",
+                    sku, mins, mpu, factor, cat
                 )
 
     return {"ok": True, "upserted": len(rows)}
@@ -796,7 +849,8 @@ from datetime import date as _date, timedelta as _timedelta
 class PlanItemIn(BaseModel):
     fecha: str          # ISO: YYYY-MM-DD
     sku: str
-    cajas_plan: int
+    cajas_plan: int = 0
+    unidades_plan: Optional[int] = None
     operario_id: Optional[int] = None
     es_emergencia: bool = False
 
@@ -809,7 +863,8 @@ class PlanItemIn(BaseModel):
 
 
 class PlanCierreIn(BaseModel):
-    cajas_real: int
+    cajas_real: Optional[int] = None
+    unidades_real: Optional[int] = None
 
 
 @router.get("/planning/semana")
@@ -834,9 +889,9 @@ async def api_plan_semana(
 
     async with get_conn() as conn:
         plan_rows = await conn.fetch(
-            """SELECT p.id, p.fecha, p.sku, p.cajas_plan, p.operario_id,
-                      u.nombre AS operario_nombre, p.es_emergencia, p.cajas_real,
-                      pt.minutos_por_caja
+            """SELECT p.id, p.fecha, p.sku, p.cajas_plan, p.unidades_plan, p.operario_id,
+                      u.nombre AS operario_nombre, p.es_emergencia, p.cajas_real, p.unidades_real,
+                      pt.minutos_por_caja, pt.minutos_por_unidad, pt.factor_empaque
                FROM plan_produccion p
                LEFT JOIN reproceso_usuarios u ON u.id = p.operario_id
                LEFT JOIN product_times pt ON pt.sku = p.sku
@@ -845,7 +900,7 @@ async def api_plan_semana(
             start, end
         )
         times_rows = await conn.fetch(
-            "SELECT sku, minutos_por_caja FROM product_times ORDER BY sku"
+            "SELECT sku, minutos_por_caja, minutos_por_unidad, factor_empaque FROM product_times ORDER BY sku"
         )
         operarios = await conn.fetch(
             "SELECT id, nombre FROM reproceso_usuarios WHERE rol = 'Operario' ORDER BY nombre"
@@ -869,10 +924,16 @@ async def api_plan_semana(
     for i in range(7):
         dia = (start + _timedelta(days=i)).isoformat()
         items = plan_by_date.get(dia, [])
-        minutos_plan = sum(
-            (it.get("minutos_por_caja") or 0) * it["cajas_plan"]
-            for it in items
-        )
+        minutos_plan = 0
+        for it in items:
+            mpc = it.get("minutos_por_caja") or 0
+            mpu = it.get("minutos_por_unidad")
+            fe = it.get("factor_empaque") or 1
+            # Si unidades_plan está set, usarlo; sino usar cajas_plan
+            if it.get("unidades_plan") is not None and mpu is not None:
+                minutos_plan += mpu * it["unidades_plan"]
+            else:
+                minutos_plan += mpc * it["cajas_plan"]
         cap = minutos_jornada * n_operarios
         semana.append({
             "fecha": dia,
@@ -887,13 +948,184 @@ async def api_plan_semana(
         "horas_jornada": horas_jornada,
         "n_operarios": n_operarios,
         "operarios": [dict(o) for o in operarios],
-        "product_times": {r["sku"]: float(r["minutos_por_caja"]) for r in times_rows},
+        "product_times": {r["sku"]: {
+            "minutos_por_caja": float(r["minutos_por_caja"]),
+            "minutos_por_unidad": float(r["minutos_por_unidad"]) if r["minutos_por_unidad"] else None,
+            "factor_empaque": r["factor_empaque"] or 1,
+        } for r in times_rows},
+    }
+
+
+@router.get("/planning/dashboard")
+async def api_planning_dashboard(
+    fecha: Optional[str] = None,
+    maestro=Depends(require_maestro)
+):
+    """
+    Dashboard en tiempo real: conteos por operario (pendiente, en_proceso, completado),
+    barras de progreso de jornada, comparativo plan vs real para el día especificado.
+    Retorna: operators[], plan_por_sku[], pct_cumplimiento_plan.
+    """
+    target = _date.fromisoformat(fecha) if fecha else _date.today()
+    async with get_conn() as conn:
+        horas_cfg = await conn.fetchval(
+            "SELECT value FROM reproceso_config WHERE key='horas_jornada'"
+        )
+        minutos_jornada = float(horas_cfg) * 60 if horas_cfg else 6.5 * 60
+
+        # Stats por operario: conteos y tiempo utilizado
+        operator_stats = await conn.fetch("""
+            WITH pause_totals AS (
+                SELECT proceso_id,
+                       COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(fin,NOW())-inicio))/60),0) AS pausa_min
+                FROM reproceso_pausas GROUP BY proceso_id
+            )
+            SELECT u.id, u.nombre,
+                COUNT(CASE WHEN p.estado='CREADO'    THEN 1 END) AS pendiente,
+                COUNT(CASE WHEN p.estado='INICIADO'  THEN 1 END) AS en_proceso,
+                COUNT(CASE WHEN p.estado='PAUSADO'   THEN 1 END) AS pausado,
+                COUNT(CASE WHEN p.estado='FINALIZADO'
+                           AND p.finished_at::date=$1 THEN 1 END) AS completado_hoy,
+                COALESCE(SUM(CASE WHEN p.estado='FINALIZADO' AND p.finished_at::date=$1 THEN
+                    GREATEST(0, EXTRACT(EPOCH FROM (p.finished_at-p.started_at))/60
+                    - COALESCE(pt.pausa_min,0))
+                END), 0) AS minutos_usados_hoy
+            FROM reproceso_usuarios u
+            LEFT JOIN reproceso_procesos p ON p.operario_id=u.id
+            LEFT JOIN pause_totals pt ON pt.proceso_id=p.id
+            WHERE u.rol='Operario'
+            GROUP BY u.id, u.nombre
+            ORDER BY u.nombre
+        """, target)
+
+        # Plan del día por SKU
+        plan_rows = await conn.fetch("""
+            SELECT p.sku, SUM(p.cajas_plan) AS cajas_plan, SUM(p.cajas_real) AS cajas_real,
+                   COUNT(CASE WHEN p.cajas_real IS NOT NULL THEN 1 END) AS items_cerrados,
+                   COUNT(*) AS items_total
+            FROM plan_produccion p
+            WHERE p.fecha=$1
+            GROUP BY p.sku
+            ORDER BY p.sku
+        """, target)
+
+    operators = []
+    for r in operator_stats:
+        pct_jornada = round(float(r["minutos_usados_hoy"]) / minutos_jornada * 100, 1) if minutos_jornada else 0
+        operators.append({
+            "id": r["id"],
+            "nombre": r["nombre"],
+            "pendiente": r["pendiente"],
+            "en_proceso": r["en_proceso"],
+            "pausado": r["pausado"],
+            "completado_hoy": r["completado_hoy"],
+            "minutos_usados_hoy": round(float(r["minutos_usados_hoy"]), 1),
+            "pct_jornada": min(pct_jornada, 100),
+            "minutos_jornada": round(minutos_jornada, 1),
+        })
+
+    total_cajas_plan = sum(float(r["cajas_plan"] or 0) for r in plan_rows)
+    total_cajas_real = sum(float(r["cajas_real"] or 0) for r in plan_rows)
+    pct_plan = round(total_cajas_real / total_cajas_plan * 100, 1) if total_cajas_plan > 0 else None
+
+    return {
+        "fecha": target.isoformat(),
+        "horas_jornada": minutos_jornada / 60,
+        "operators": operators,
+        "plan_por_sku": [dict(r) for r in plan_rows],
+        "pct_cumplimiento_plan": pct_plan,
+        "total_cajas_plan": total_cajas_plan,
+        "total_cajas_real": total_cajas_real,
+    }
+
+
+@router.get("/planning/stock-projection")
+async def api_stock_projection(
+    dias: int = 7,
+    maestro=Depends(require_maestro)
+):
+    """
+    Proyección de stock para los próximos N días.
+    Stock proyectado = stock_actual (Laudus) + producción acumulada hasta ese día.
+    Delay configurable de 3 días hábiles: producción planificada el día X → disponible el día X+3.
+    """
+    today = _date.today()
+    end = today + _timedelta(days=dias + 3)  # buffer para delay
+    DELAY_DIAS = 3
+
+    async with get_conn() as conn:
+        rules = await conn.fetch("SELECT sku, stock_minimo FROM stock_rules ORDER BY sku")
+        plan = await conn.fetch("""
+            SELECT fecha, sku, COALESCE(cajas_real, cajas_plan) AS cajas_efectivas
+            FROM plan_produccion
+            WHERE fecha BETWEEN $1 AND $2
+            ORDER BY fecha, sku
+        """, today, end)
+
+    # Copia de inventario en caché (si existe)
+    _inventory_cache = getattr(api_stock_projection, '_inv_cache', {"data": None})
+    stock_map = {r["sku"].upper(): 0 for r in rules}
+
+    # Si hay caché de inventario Laudus, usarlo
+    inv = _inventory_cache.get("data") or []
+    for item in inv:
+        sku = (item.get("sku") or "").upper()
+        if sku in stock_map:
+            stock_map[sku] = item.get("stock", 0)
+
+    # Acumular plan por (sku, fecha_disponible = fecha + DELAY_DIAS)
+    produccion_por_dia: dict = {}
+    for row in plan:
+        available_date = (row["fecha"] + _timedelta(days=DELAY_DIAS)).isoformat()
+        sku_upper = row["sku"].upper()
+        if sku_upper not in produccion_por_dia:
+            produccion_por_dia[sku_upper] = {}
+        if available_date not in produccion_por_dia[sku_upper]:
+            produccion_por_dia[sku_upper][available_date] = 0
+        produccion_por_dia[sku_upper][available_date] += float(row["cajas_efectivas"] or 0)
+
+    # Generar proyección día a día
+    projection = []
+    for dia_offset in range(dias):
+        dia = (today + _timedelta(days=dia_offset)).isoformat()
+        dia_data = {"fecha": dia, "skus": []}
+
+        for rule in rules:
+            sku = rule["sku"].upper()
+            # Producción que llega hoy
+            prod_hoy = produccion_por_dia.get(sku, {}).get(dia, 0)
+
+            # Stock proyectado = stock base + acumulado hasta hoy
+            stock_base = stock_map.get(sku, 0)
+            produccion_acumulada = 0
+            for offset in range(dia_offset + 1):
+                acum_dia = (today + _timedelta(days=offset)).isoformat()
+                produccion_acumulada += produccion_por_dia.get(sku, {}).get(acum_dia, 0)
+
+            stock_proyectado = stock_base + produccion_acumulada
+            diferencia = stock_proyectado - rule["stock_minimo"]
+
+            dia_data["skus"].append({
+                "sku": sku,
+                "stock_minimo": rule["stock_minimo"],
+                "produccion_dia": prod_hoy,
+                "stock_proyectado": round(stock_proyectado, 1),
+                "diferencia": round(diferencia, 1),
+                "alerta": diferencia < 0,
+            })
+
+        projection.append(dia_data)
+
+    return {
+        "delay_dias": DELAY_DIAS,
+        "proyeccion": projection,
+        "has_inventory": bool(inv),
     }
 
 
 @router.post("/planning", status_code=201)
 async def api_crear_plan(body: PlanItemIn, maestro=Depends(require_maestro)):
-    """Crea o actualiza un ítem del plan de producción."""
+    """Crea o actualiza un ítem del plan de producción. Soporta cajas_plan y unidades_plan."""
     try:
         fecha = _date.fromisoformat(body.fecha)
     except ValueError:
@@ -902,12 +1134,12 @@ async def api_crear_plan(body: PlanItemIn, maestro=Depends(require_maestro)):
     async with get_conn() as conn:
         try:
             row = await conn.fetchrow(
-                """INSERT INTO plan_produccion (fecha, sku, cajas_plan, operario_id, es_emergencia)
-                   VALUES ($1, $2, $3, $4, $5)
+                """INSERT INTO plan_produccion (fecha, sku, cajas_plan, unidades_plan, operario_id, es_emergencia)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    ON CONFLICT (fecha, sku, operario_id) DO UPDATE
-                   SET cajas_plan = EXCLUDED.cajas_plan, es_emergencia = EXCLUDED.es_emergencia
-                   RETURNING id, fecha, sku, cajas_plan, operario_id, es_emergencia, cajas_real""",
-                fecha, body.sku.upper(), body.cajas_plan, body.operario_id, body.es_emergencia
+                   SET cajas_plan = EXCLUDED.cajas_plan, unidades_plan = EXCLUDED.unidades_plan, es_emergencia = EXCLUDED.es_emergencia
+                   RETURNING id, fecha, sku, cajas_plan, unidades_plan, operario_id, es_emergencia, cajas_real, unidades_real""",
+                fecha, body.sku.upper(), body.cajas_plan, body.unidades_plan, body.operario_id, body.es_emergencia
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -916,12 +1148,12 @@ async def api_crear_plan(body: PlanItemIn, maestro=Depends(require_maestro)):
 
 @router.patch("/planning/{plan_id}/cierre")
 async def api_cierre_plan(plan_id: int, body: PlanCierreIn, maestro=Depends(require_maestro)):
-    """Registra el cierre real del día (cajas realmente producidas)."""
+    """Registra el cierre real del día (cajas y/o unidades realmente producidas)."""
     async with get_conn() as conn:
         row = await conn.fetchrow(
-            "UPDATE plan_produccion SET cajas_real=$1 WHERE id=$2 "
-            "RETURNING id, fecha, sku, cajas_plan, cajas_real",
-            body.cajas_real, plan_id
+            "UPDATE plan_produccion SET cajas_real=$1, unidades_real=$2 WHERE id=$3 "
+            "RETURNING id, fecha, sku, cajas_plan, unidades_plan, cajas_real, unidades_real",
+            body.cajas_real, body.unidades_real, plan_id
         )
     if not row:
         raise HTTPException(status_code=404, detail="Plan no encontrado")
@@ -961,7 +1193,8 @@ async def api_daily_report_planning(
         minutos_disponibles = horas_jornada * 60 * n_operarios
 
         plan_rows = await conn.fetch(
-            """SELECT p.sku, p.cajas_plan, p.cajas_real, p.es_emergencia,
+            """SELECT p.id, p.sku, p.cajas_plan, p.unidades_plan, p.cajas_real, p.unidades_real,
+                      p.es_emergencia, CASE WHEN p.cajas_real IS NOT NULL THEN TRUE ELSE FALSE END AS completado,
                       u.nombre AS operario, pt.minutos_por_caja
                FROM plan_produccion p
                LEFT JOIN reproceso_usuarios u ON u.id = p.operario_id

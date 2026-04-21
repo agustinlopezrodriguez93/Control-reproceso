@@ -128,9 +128,12 @@ CREATE TABLE IF NOT EXISTS active_skus (
 );
 
 CREATE TABLE IF NOT EXISTS product_times (
-    sku              TEXT PRIMARY KEY,
-    minutos_por_caja NUMERIC(8,2) NOT NULL DEFAULT 0,
-    updated_at       TIMESTAMPTZ DEFAULT NOW()
+    sku                TEXT PRIMARY KEY,
+    minutos_por_caja   NUMERIC(8,2) NOT NULL DEFAULT 0,
+    minutos_por_unidad NUMERIC(8,2),
+    factor_empaque     INTEGER DEFAULT 1,
+    categoria          TEXT DEFAULT '',
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS plan_produccion (
@@ -138,9 +141,11 @@ CREATE TABLE IF NOT EXISTS plan_produccion (
     fecha           DATE NOT NULL,
     sku             TEXT NOT NULL,
     cajas_plan      INTEGER NOT NULL DEFAULT 0,
+    unidades_plan   INTEGER,
     operario_id     INTEGER REFERENCES reproceso_usuarios(id),
     es_emergencia   BOOLEAN DEFAULT FALSE,
     cajas_real      INTEGER,
+    unidades_real   INTEGER,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (fecha, sku, operario_id)
 );
@@ -199,6 +204,33 @@ async def init_db():
         if not caja_exists:
             logger.info("[DB] Migración: añadiendo columna caja a active_skus...")
             await conn.execute("ALTER TABLE active_skus ADD COLUMN caja TEXT NOT NULL DEFAULT ''")
+
+        # Migraciones: product_times nuevas columnas (minutos_por_unidad, factor_empaque, categoria)
+        for col, ddl in [
+            ("minutos_por_unidad", "ALTER TABLE product_times ADD COLUMN minutos_por_unidad NUMERIC(8,2)"),
+            ("factor_empaque",     "ALTER TABLE product_times ADD COLUMN factor_empaque INTEGER DEFAULT 1"),
+            ("categoria",          "ALTER TABLE product_times ADD COLUMN categoria TEXT DEFAULT ''"),
+        ]:
+            col_exists = await conn.fetchval("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='product_times' AND column_name=$1
+            """, col)
+            if not col_exists:
+                logger.info(f"[DB] Migración: añadiendo {col} a product_times...")
+                await conn.execute(ddl)
+
+        # Migraciones: plan_produccion nuevas columnas (unidades_plan, unidades_real)
+        for col, ddl in [
+            ("unidades_plan", "ALTER TABLE plan_produccion ADD COLUMN unidades_plan INTEGER"),
+            ("unidades_real", "ALTER TABLE plan_produccion ADD COLUMN unidades_real INTEGER"),
+        ]:
+            col_exists = await conn.fetchval("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='plan_produccion' AND column_name=$1
+            """, col)
+            if not col_exists:
+                logger.info(f"[DB] Migración: añadiendo {col} a plan_produccion...")
+                await conn.execute(ddl)
 
         # Seed usuarios
         user_count = await conn.fetchval("SELECT COUNT(*) FROM reproceso_usuarios")
@@ -283,6 +315,55 @@ async def init_db():
                         sku, mins
                     )
             logger.info("[DB] Productos mock con caja y tiempos creados.")
+
+        # Seed/update product_times con nuevas columnas (idempotente)
+        # Mapeo de SKU → (factor_empaque, categoria, minutos_por_unidad calculado)
+        product_times_data = [
+            # Galletas (factor 12)
+            ("GCMD",    12, "Galletas"),
+            ("GGAL070", 12, "Galletas"),
+            # Imperiales (factor 6)
+            ("IMOCA",   6,  "Imperiales"),
+            ("IMOCP",   6,  "Imperiales"),
+            # Muffins (factor 8)
+            ("MCCE",    8,  "Muffins"),
+            # Sándwiches (factor 10)
+            ("SCCA",    10, "Sándwiches"),
+            # Selección (factor 12)
+            ("SECC090", 12, "Selección"),
+            ("SECPI",   12, "Selección"),
+            ("SEKOF",   8,  "Selección"),
+            ("SEKQB",   8,  "Selección"),
+            ("SEKRN",   8,  "Selección"),
+            ("SEPASP",  12, "Selección"),
+            ("SEPC",    12, "Selección"),
+            ("SEPEIC",  12, "Selección"),
+            ("SEPOD",   10, "Selección"),
+            ("SEPOF",   10, "Selección"),
+            ("SESCD",   12, "Selección"),
+            # Surtidos (factor 8)
+            ("SGEP",    8,  "Surtidos"),
+            ("SKPXL",   8,  "Surtidos"),
+        ]
+        await conn.execute("""
+            UPDATE product_times SET
+                factor_empaque = $2,
+                categoria = $3,
+                minutos_por_unidad = minutos_por_caja / $2
+            WHERE sku = $1 AND (factor_empaque IS NULL OR factor_empaque = 1)
+        """, product_times_data[0][0], product_times_data[0][1], product_times_data[0][2])
+
+        # Para cada SKU, hacer el update
+        for sku, factor, cat in product_times_data:
+            await conn.execute("""
+                UPDATE product_times SET
+                    factor_empaque = $2,
+                    categoria = $3,
+                    minutos_por_unidad = minutos_por_caja / $2
+                WHERE sku = $1 AND (factor_empaque IS NULL OR factor_empaque = 1)
+            """, sku, factor, cat)
+
+        logger.info("[DB] Seed de product_times con categoría, factor empaque y minutos_por_unidad completado.")
 
     logger.info("[DB] Control Reproceso DB inicializada en PostgreSQL (asyncpg).")
 
@@ -421,21 +502,23 @@ async def _attach_pausas_batch(conn: asyncpg.Connection, procesos: list[dict]) -
 
 
 async def get_procesos(operario_nombre: str | None = None) -> list[dict]:
-    """Retorna procesos con pausas. Usa batch loading (2 queries totales)."""
+    """Retorna procesos con pausas. Usa batch loading (2 queries totales). Incluye caja_sku del JOIN con active_skus."""
     async with get_conn() as conn:
         if operario_nombre:
             rows = await conn.fetch("""
-                SELECT p.*, u.nombre as operario_nombre
+                SELECT p.*, u.nombre as operario_nombre, ask.caja as caja_sku
                 FROM reproceso_procesos p
                 JOIN reproceso_usuarios u ON u.id = p.operario_id
+                LEFT JOIN active_skus ask ON ask.sku = p.sku_destino
                 WHERE u.nombre = $1
                 ORDER BY p.es_urgente DESC, p.created_at DESC
             """, operario_nombre)
         else:
             rows = await conn.fetch("""
-                SELECT p.*, u.nombre as operario_nombre
+                SELECT p.*, u.nombre as operario_nombre, ask.caja as caja_sku
                 FROM reproceso_procesos p
                 JOIN reproceso_usuarios u ON u.id = p.operario_id
+                LEFT JOIN active_skus ask ON ask.sku = p.sku_destino
                 ORDER BY p.es_urgente DESC, p.created_at DESC
             """)
 

@@ -429,6 +429,10 @@ const ViewStockPanel = (() => {
                     if (btn.dataset.tab === 'productos' && !_laudusList.length) {
                         _loadProducts();
                     }
+                    // Lazy-load tiempos al entrar al tab por primera vez
+                    if (btn.dataset.tab === 'tiempos' && !_timesList.length) {
+                        _loadTimes();
+                    }
                 });
             }
         });
@@ -469,6 +473,9 @@ const ViewStockPanel = (() => {
 
         // Formulario de reglas
         _wireRuleForm();
+
+        // Formulario de tiempos
+        _wireTimesForm();
 
         // Activar tab Estado por defecto
         _switchTab('estado');
@@ -519,6 +526,9 @@ const ViewStockPanel = (() => {
         if (tipo === 'productos') {
             csv = 'sku,descripcion,caja\nGGAL070,Galleta Galletita 70g,Caja 1\nIMOCA,Imperial Moca,Caja 2\n';
             filename = 'plantilla_productos.csv';
+        } else if (tipo === 'tiempos') {
+            csv = 'sku,minutos_por_caja,minutos_por_unidad,factor_empaque,categoria\nGGAL070,28,2.3,12,Galletas\nIMOCA,42,7,6,Imperiales\n';
+            filename = 'plantilla_tiempos.csv';
         } else {
             csv = 'sku,minutos_por_caja\nGGAL070,28\nIMOCA,42\n';
             filename = 'plantilla_tiempos.csv';
@@ -530,5 +540,110 @@ const ViewStockPanel = (() => {
         URL.revokeObjectURL(url);
     }
 
-    return { render, sync, startEdit, deleteRule, uploadCSV, downloadTemplate };
+    // ─── Tab Tiempos ─────────────────────────────
+    let _timesList = [];
+    let _editTimeId = null;
+
+    async function _loadTimes() {
+        try {
+            const data = await API.get('/api/product-times');
+            _timesList = data.times || [];
+            _renderTimesTable();
+        } catch (err) {
+            console.error('[StockPanel] Error al cargar tiempos:', err);
+            UI.showSnackbar('Error al cargar tiempos de producción', 'error');
+        }
+    }
+
+    function _renderTimesTable() {
+        const tbody = document.getElementById('sp-times-body');
+        if (!tbody) return;
+
+        if (!_timesList.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Sin tiempos definidos</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = _timesList.sort((a, b) => a.sku.localeCompare(b.sku)).map(t => `
+            <tr>
+                <td><code>${t.sku}</code></td>
+                <td>${t.categoria || '—'}</td>
+                <td>${t.minutos_por_caja ? parseFloat(t.minutos_por_caja).toFixed(1) : '—'}</td>
+                <td>${t.minutos_por_unidad ? parseFloat(t.minutos_por_unidad).toFixed(2) : '—'}</td>
+                <td style="text-align:center">${t.factor_empaque || 1}</td>
+                <td>
+                    <button class="btn btn-ghost btn-sm" onclick="ViewStockPanel.editTime('${t.sku}')">Editar</button>
+                    <button class="btn btn-ghost btn-sm btn-danger-text" onclick="ViewStockPanel.deleteTime('${t.sku}')">Eliminar</button>
+                </td>
+            </tr>`).join('');
+    }
+
+    function _wireTimesForm() {
+        const form = document.getElementById('sp-times-form');
+        if (!form || form._wired) return;
+        form._wired = true;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const sku = (document.getElementById('sp-times-sku').value || '').trim().toUpperCase();
+            const mpc = parseFloat(document.getElementById('sp-times-mpc').value || '0');
+            const mpu = document.getElementById('sp-times-mpu').value ? parseFloat(document.getElementById('sp-times-mpu').value) : null;
+            const factor = parseInt(document.getElementById('sp-times-factor').value || '1', 10);
+            const categoria = (document.getElementById('sp-times-categoria').value || '').trim();
+
+            if (!sku || mpc < 0) {
+                UI.showSnackbar('Completa SKU y Minutos/Caja', 'error'); return;
+            }
+
+            const body = { minutos_por_caja: mpc, minutos_por_unidad: mpu, factor_empaque: factor, categoria };
+            try {
+                await API.put(`/api/product-times/${sku}`, body);
+                UI.showSnackbar(`Tiempos guardados: ${sku}`, 'success');
+                form.reset();
+                _editTimeId = null;
+                document.getElementById('sp-times-cancel').classList.add('hidden');
+                document.getElementById('sp-times-form-title').textContent = 'Nuevo tiempo';
+                await _loadTimes();
+            } catch (err) {
+                UI.showSnackbar(`Error: ${err.message || 'No se pudo guardar'}`, 'error');
+            }
+        });
+
+        const cancelBtn = document.getElementById('sp-times-cancel');
+        if (cancelBtn && !cancelBtn._wired) {
+            cancelBtn._wired = true;
+            cancelBtn.addEventListener('click', () => {
+                _editTimeId = null;
+                document.getElementById('sp-times-form').reset();
+                cancelBtn.classList.add('hidden');
+                document.getElementById('sp-times-form-title').textContent = 'Nuevo tiempo';
+            });
+        }
+    }
+
+    function editTime(sku) {
+        const t = _timesList.find(x => x.sku === sku.toUpperCase());
+        if (!t) return;
+
+        _editTimeId = sku;
+        document.getElementById('sp-times-sku').value = t.sku;
+        document.getElementById('sp-times-mpc').value = t.minutos_por_caja || '';
+        document.getElementById('sp-times-mpu').value = t.minutos_por_unidad || '';
+        document.getElementById('sp-times-factor').value = t.factor_empaque || 1;
+        document.getElementById('sp-times-categoria').value = t.categoria || '';
+        document.getElementById('sp-times-form-title').textContent = `Editar: ${t.sku}`;
+        document.getElementById('sp-times-cancel').classList.remove('hidden');
+        document.getElementById('sp-times-sku').disabled = true;
+    }
+
+    function deleteTime(sku) {
+        if (confirm(`¿Eliminar tiempos de ${sku}?`)) {
+            // Para eliminar, hacer un PUT con valores vacíos o un DELETE si lo soporta
+            // Por ahora, mostrar mensaje
+            UI.showSnackbar(`Función de eliminar no implementada aún para ${sku}`, 'info');
+        }
+    }
+
+    return { render, sync, startEdit, deleteRule, uploadCSV, downloadTemplate, editTime, deleteTime };
+
 })();

@@ -9,29 +9,35 @@ const ViewReports = {
     async render() {
         UI.showLoading(true);
         try {
-            const data = await API.get('/api/reports/daily');
-            
+            // Cargar datos en paralelo
+            const [dailyData, dashboardData] = await Promise.all([
+                API.get('/api/reports/daily'),
+                API.get('/api/planning/dashboard').catch(() => null)
+            ]);
+
+            const data = dailyData;
+
             // 1. KPIs
             document.getElementById('report-kpi-total').textContent = data.total_procesos;
             document.getElementById('report-kpi-emergencias').textContent = data.total_emergencias;
             document.getElementById('report-kpi-operarios').textContent = data.operarios.length;
-            
+
             const totalUnits = data.resumen_sku.reduce((acc, curr) => acc + (curr.unidades_reprocesadas || 0), 0);
             document.getElementById('report-kpi-unidades').textContent = totalUnits;
 
             // 2. Tabla de procesos
             const tbody = document.getElementById('report-table-body');
             tbody.innerHTML = '';
-            
+
             if (data.procesos.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">Hoy no se han iniciado procesos.</td></tr>';
             } else {
                 data.procesos.forEach(p => {
                     const duracion = p.duracion_min ? `${Math.round(p.duracion_min)} min` : 'En curso';
-                    const variacion = (p.stock_final !== null && p.stock_inicial !== null) 
-                        ? (p.stock_final - p.stock_inicial) 
+                    const variacion = (p.stock_final !== null && p.stock_inicial !== null)
+                        ? (p.stock_final - p.stock_inicial)
                         : '-';
-                    
+
                     const row = document.createElement('tr');
                     if (p.es_urgente) row.style.background = 'rgba(239, 68, 68, 0.05)';
 
@@ -52,6 +58,11 @@ const ViewReports = {
 
             // 3. Gráficos
             this.renderCharts(data);
+
+            // 4. Eficiencia por operaria (desde dashboard si disponible)
+            if (dashboardData && dashboardData.operators) {
+                this.renderOperatorEfficiency(dashboardData.operators);
+            }
 
         } catch (err) {
             console.error('Error cargando reporte:', err);
@@ -134,6 +145,35 @@ const ViewReports = {
         } catch (err) {
             container.innerHTML = `<p style="color:var(--danger)">No se pudo cargar el informe de planificación: ${err.message}</p>`;
         }
+    },
+
+    renderOperatorEfficiency(operators) {
+        const container = document.getElementById('report-operator-efficiency');
+        if (!container) return;
+
+        const html = `
+            <h3 style="margin-bottom:1rem;">Eficiencia por Operaria</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;">
+                ${(operators || []).map(op => {
+                    const pctJornada = op.pct_jornada || 0;
+                    const color = pctJornada >= 100 ? 'var(--danger)' : pctJornada >= 80 ? 'var(--warning,#d97706)' : 'var(--success,#16a34a)';
+                    const minUsados = op.minutos_usados_hoy || 0;
+                    const minJornada = op.minutos_jornada || 390;
+                    return `
+                        <div class="card" style="padding:.75rem;">
+                            <div style="font-weight:600;font-size:.9rem;margin-bottom:.5rem;">${op.nombre}</div>
+                            <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.4rem;">
+                                ${minUsados} de ${minJornada} min
+                            </div>
+                            <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:.4rem;">
+                                <div style="height:100%;width:${Math.min(pctJornada, 100)}%;background:${color};transition:width .3s;"></div>
+                            </div>
+                            <div style="font-size:.7rem;color:${color};font-weight:600;">${pctJornada.toFixed(0)}%</div>
+                        </div>`;
+                }).join('')}
+            </div>`;
+
+        container.innerHTML = html;
     },
 
     renderCharts(data) {

@@ -10,10 +10,14 @@ const ViewDashboard = {
         const currentRole = Store.state.currentRole;
         const isMaestro = currentRole === 'Maestro';
 
-        ['btn-view-performance', 'btn-view-users', 'btn-view-audit', 'btn-view-stock-panel', 'btn-view-reports', 'btn-view-planning', 'btn-view-optimization'].forEach(id => {
-            const btn = document.getElementById(id);
-            if (btn) btn.classList.toggle('hidden', !isMaestro);
-        });
+        // Para Maestro: ocultar todos los botones antiguos (integrados en Admin Dashboard)
+        // Para Operarios: mostrar "Nuevo Proceso" únicamente
+        if (isMaestro) {
+            ['btn-view-performance', 'btn-view-users', 'btn-view-audit', 'btn-view-stock-panel', 'btn-view-reports', 'btn-view-planning', 'btn-view-optimization', 'btn-view-dashboard-maestro', 'btn-view-stock-projection'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.classList.add('hidden');
+            });
+        }
 
         const btnCreate = document.getElementById('btn-new-process');
         if (btnCreate) btnCreate.classList.toggle('hidden', isMaestro);
@@ -32,35 +36,53 @@ const ViewDashboard = {
         }
         emptyState.classList.add('hidden');
 
+        // Agrupar procesos por caja_sku
+        const grouped = {};
         list.forEach(proc => {
-            const tr = document.createElement('tr');
-            if (proc.es_urgente) tr.classList.add('tr-urgent');
+            const key = proc.caja_sku || '(sin caja)';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(proc);
+        });
 
-            const { cls: statusCls } = UI.getStatusBadge(proc.estado);
-            const urgentBadge = proc.es_urgente ? '<span class="badge badge-urgent">URGENTE</span>' : '';
-            const timeStr = UI.calcEffectiveTime(proc);
+        // Renderizar agrupado
+        Object.entries(grouped).forEach(([cajaSkuKey, procs]) => {
+            // Fila de encabezado de grupo
+            const groupHeaderTr = document.createElement('tr');
+            groupHeaderTr.className = 'group-header';
+            groupHeaderTr.innerHTML = `<td colspan="6" style="font-weight:600;background:var(--bg-secondary);padding:.5rem .75rem;color:var(--text-secondary);font-size:.85rem;">📦 ${cajaSkuKey}</td>`;
+            tbody.appendChild(groupHeaderTr);
 
-            tr.innerHTML = `
-                <td>${proc.sku_destino}</td>
-                <td>${proc.operario_nombre}</td>
-                <td><span class="badge badge-${statusCls}">${proc.estado}</span></td>
-                <td>${timeStr}</td>
-                <td>${urgentBadge}</td>
-                <td>
-                    ${(proc.estado !== ProcessState.FINISHED && !isMaestro) ? `
-                    <button class="btn btn-warning btn-sm" data-proc-id="${proc.id}">
-                        Continuar
-                    </button>
-                    ` : ''}
-                </td>
-            `;
+            // Filas de procesos en el grupo
+            procs.forEach(proc => {
+                const tr = document.createElement('tr');
+                if (proc.es_urgente) tr.classList.add('tr-urgent');
 
-            const btn = tr.querySelector('[data-proc-id]');
-            if (btn) {
-                btn.addEventListener('click', () => app.viewDetailPreloaded(proc));
-            }
+                const { cls: statusCls } = UI.getStatusBadge(proc.estado);
+                const urgentBadge = proc.es_urgente ? '<span class="badge badge-urgent">URGENTE</span>' : '';
+                const timeStr = UI.calcEffectiveTime(proc);
 
-            tbody.appendChild(tr);
+                tr.innerHTML = `
+                    <td>${proc.sku_destino}</td>
+                    <td>${proc.operario_nombre}</td>
+                    <td><span class="badge badge-${statusCls}">${proc.estado}</span></td>
+                    <td>${timeStr}</td>
+                    <td>${urgentBadge}</td>
+                    <td>
+                        ${(proc.estado !== ProcessState.FINISHED && !isMaestro) ? `
+                        <button class="btn btn-warning btn-sm" data-proc-id="${proc.id}">
+                            Continuar
+                        </button>
+                        ` : ''}
+                    </td>
+                `;
+
+                const btn = tr.querySelector('[data-proc-id]');
+                if (btn) {
+                    btn.addEventListener('click', () => app.viewDetailPreloaded(proc));
+                }
+
+                tbody.appendChild(tr);
+            });
         });
         UI.checkGlobalUrgency();
     }

@@ -5,10 +5,11 @@
 const ViewPlanning = (() => {
     let _semana = [];           // [{fecha, items, minutos_plan, minutos_disponibles, pct_uso}]
     let _operarios = [];
-    let _productTimes = {};     // {sku: minutos_por_caja}
+    let _productTimes = {};     // {sku: minutos_por_caja, minutos_por_unidad, factor_empaque}
     let _horasJornada = 6.5;
     let _fechaInicio = null;    // lunes de la semana mostrada
     let _activeSkus = [];       // [{sku, descripcion, caja}]
+    let _planPorUnidades = false; // modo planificación: false=cajas, true=unidades
 
     const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -140,11 +141,25 @@ const ViewPlanning = (() => {
 
     function _renderItem(it) {
         const mins = (it.minutos_por_caja || 0) * it.cajas_plan;
-        const cierreBtn = it.cajas_real === null || it.cajas_real === undefined
-            ? `<button class="btn btn-ghost btn-sm plan-cierre-btn" data-id="${it.id}"
-                style="font-size:.7rem;padding:.15rem .4rem;">Cerrar</button>`
-            : `<span style="font-size:.7rem;color:var(--success,#16a34a);font-weight:600">
-                ✓ Real: ${it.cajas_real} cajas</span>`;
+        const hoy = new Date().toISOString().slice(0, 10);
+        const esHoy = it.fecha === hoy;
+
+        let cierreHTML;
+        if (esHoy) {
+            const isChecked = it.cajas_real !== null && it.cajas_real !== undefined;
+            cierreHTML = `
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.7rem;">
+                    <input type="checkbox" class="plan-done-checkbox" data-id="${it.id}"
+                        ${isChecked ? 'checked' : ''} style="cursor:pointer;">
+                    <span>${isChecked ? `Completado (${it.cajas_real} cj)` : 'Marcar completado'}</span>
+                </label>`;
+        } else {
+            cierreHTML = it.cajas_real === null || it.cajas_real === undefined
+                ? `<button class="btn btn-ghost btn-sm plan-cierre-btn" data-id="${it.id}"
+                    style="font-size:.7rem;padding:.15rem .4rem;">Cerrar</button>`
+                : `<span style="font-size:.7rem;color:var(--success,#16a34a);font-weight:600">
+                    ✓ Real: ${it.cajas_real} cajas</span>`;
+        }
 
         return `<div class="planning-item ${it.es_emergencia ? 'planning-item-emergencia' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:start;gap:.25rem;">
@@ -156,7 +171,7 @@ const ViewPlanning = (() => {
                 ${it.operario_nombre || 'Sin asignar'} · ${it.cajas_plan} cajas
                 ${mins ? `· ${Math.round(mins)} min` : ''}
             </div>
-            <div style="margin-top:.3rem;">${cierreBtn}</div>
+            <div style="margin-top:.3rem;">${cierreHTML}</div>
         </div>`;
     }
 
@@ -171,6 +186,20 @@ const ViewPlanning = (() => {
         return `
         <div class="card" id="plan-add-form-card" style="padding:1.25rem;margin-top:1.25rem;display:none;">
             <h4 style="margin-bottom:1rem;">Agregar ítem al plan</h4>
+
+            <!-- Toggle Cajas/Unidades -->
+            <div style="margin-bottom:1rem;display:flex;align-items:center;gap:1rem;font-size:.85rem;">
+                <span>Planificar por:</span>
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;">
+                    <input type="radio" name="plan-mode" value="cajas" ${!_planPorUnidades ? 'checked' : ''} class="plan-mode-radio">
+                    <span>Cajas</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;">
+                    <input type="radio" name="plan-mode" value="unidades" ${_planPorUnidades ? 'checked' : ''} class="plan-mode-radio">
+                    <span>Unidades</span>
+                </label>
+            </div>
+
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;">
                 <div class="form-group">
                     <label>Fecha</label>
@@ -184,8 +213,8 @@ const ViewPlanning = (() => {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Cajas a producir</label>
-                    <input type="number" id="plan-form-cajas" class="form-control" min="1" value="1">
+                    <label id="plan-form-qty-label">Cajas a producir</label>
+                    <input type="number" id="plan-form-qty" class="form-control" min="1" value="1">
                 </div>
                 <div class="form-group">
                     <label>Operaria asignada</label>
@@ -252,7 +281,7 @@ const ViewPlanning = (() => {
             });
         });
 
-        // Botones cierre
+        // Botones cierre (para días no-hoy)
         container.querySelectorAll('.plan-cierre-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const cajasReal = prompt('¿Cuántas cajas se produjeron realmente?');
@@ -269,24 +298,79 @@ const ViewPlanning = (() => {
             });
         });
 
+        // Checkboxes completado (para hoy)
+        container.querySelectorAll('.plan-done-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', async () => {
+                const itemId = checkbox.dataset.id;
+                if (checkbox.checked) {
+                    UI.showPrompt('Registrar cajas producidas', 'Ingresa la cantidad de cajas reales:', 'number', async (cajasReal) => {
+                        const n = parseInt(cajasReal, 10);
+                        if (isNaN(n) || n < 0) { UI.showSnackbar('Valor inválido', 'error'); return false; }
+                        try {
+                            await API.patch(`/api/planning/${itemId}/cierre`, { cajas_real: n });
+                            UI.showSnackbar('Cierre registrado', 'success');
+                            load(_fechaInicio);
+                        } catch (err) {
+                            UI.showSnackbar('Error al registrar cierre', 'error');
+                            return false;
+                        }
+                    });
+                } else {
+                    try {
+                        await API.patch(`/api/planning/${itemId}/cierre`, { cajas_real: null });
+                        UI.showSnackbar('Cierre cancelado', 'success');
+                        load(_fechaInicio);
+                    } catch (err) {
+                        UI.showSnackbar('Error al cancelar cierre', 'error');
+                    }
+                }
+            });
+        });
+
         // Formulario agregar
         const skuSel = document.getElementById('plan-form-sku');
-        const cajaInput = document.getElementById('plan-form-cajas');
+        const qtyInput = document.getElementById('plan-form-qty');
+        const qtyLabel = document.getElementById('plan-form-qty-label');
         const tiempoEst = document.getElementById('plan-form-tiempo-est');
 
         function _updateTiempoEst() {
             const sku = skuSel?.value;
-            const cajas = parseInt(cajaInput?.value, 10) || 0;
-            const mins = (_productTimes[sku] || 0) * cajas;
-            if (tiempoEst) {
-                tiempoEst.textContent = mins
-                    ? `Tiempo estimado: ${Math.round(mins)} min (${(mins/60).toFixed(1)}h) · ${_productTimes[sku] || '?'} min/caja`
-                    : '';
+            const qty = parseInt(qtyInput?.value, 10) || 0;
+            const prodTimes = _productTimes[sku];
+            if (!prodTimes) { if (tiempoEst) tiempoEst.textContent = ''; return; }
+
+            let mins;
+            if (_planPorUnidades) {
+                const mpu = prodTimes.minutos_por_unidad || (prodTimes.minutos_por_caja / (prodTimes.factor_empaque || 1));
+                mins = mpu * qty;
+                if (tiempoEst) {
+                    tiempoEst.textContent = mins
+                        ? `Tiempo estimado: ${Math.round(mins)} min (${(mins/60).toFixed(1)}h) · ${Math.round(mpu*100)/100} min/unidad`
+                        : '';
+                }
+            } else {
+                mins = (prodTimes.minutos_por_caja || 0) * qty;
+                if (tiempoEst) {
+                    tiempoEst.textContent = mins
+                        ? `Tiempo estimado: ${Math.round(mins)} min (${(mins/60).toFixed(1)}h) · ${prodTimes.minutos_por_caja || '?'} min/caja`
+                        : '';
+                }
             }
         }
 
+        // Manejar toggle cajas/unidades
+        container.querySelectorAll('.plan-mode-radio').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                _planPorUnidades = e.target.value === 'unidades';
+                if (qtyLabel) {
+                    qtyLabel.textContent = _planPorUnidades ? 'Unidades a producir' : 'Cajas a producir';
+                }
+                _updateTiempoEst();
+            });
+        });
+
         skuSel?.addEventListener('change', _updateTiempoEst);
-        cajaInput?.addEventListener('input', _updateTiempoEst);
+        qtyInput?.addEventListener('input', _updateTiempoEst);
 
         document.getElementById('plan-form-cancel')?.addEventListener('click', () => {
             const formCard = document.getElementById('plan-add-form-card');
@@ -296,19 +380,25 @@ const ViewPlanning = (() => {
         document.getElementById('plan-form-submit')?.addEventListener('click', async () => {
             const fecha     = document.getElementById('plan-form-fecha')?.value;
             const sku       = document.getElementById('plan-form-sku')?.value;
-            const cajas     = parseInt(document.getElementById('plan-form-cajas')?.value, 10);
+            const qty       = parseInt(document.getElementById('plan-form-qty')?.value, 10);
             const opId      = document.getElementById('plan-form-operario')?.value || null;
             const emergencia = document.getElementById('plan-form-emergencia')?.checked || false;
 
-            if (!fecha || !sku || !cajas) {
-                UI.showSnackbar('Completa fecha, SKU y cajas', 'error'); return;
+            if (!fecha || !sku || !qty) {
+                UI.showSnackbar('Completa fecha, SKU y cantidad', 'error'); return;
             }
             try {
-                await API.post('/api/planning', {
-                    fecha, sku, cajas_plan: cajas,
+                const payload = {
+                    fecha, sku,
                     operario_id: opId ? parseInt(opId, 10) : null,
                     es_emergencia: emergencia
-                });
+                };
+                if (_planPorUnidades) {
+                    payload.unidades_plan = qty;
+                } else {
+                    payload.cajas_plan = qty;
+                }
+                await API.post('/api/planning', payload);
                 UI.showSnackbar('Ítem agregado al plan', 'success');
                 const formCard = document.getElementById('plan-add-form-card');
                 if (formCard) formCard.style.display = 'none';
