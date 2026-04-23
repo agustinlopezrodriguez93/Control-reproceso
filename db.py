@@ -278,43 +278,52 @@ async def init_db():
             logger.info("[DB] SKUs por defecto creados.")
 
         # Seed mock: productos activos agrupados por caja con tiempos de producción
+        # (sku, descripcion, caja, minutos_por_caja) — fuente única para active_skus
+        # y product_times. Cada tabla se puebla según su propio count para permitir
+        # recuperación si una quedó desincronizada (ej. active_skus poblado sin product_times).
+        mock_products = [
+            ("GCMD",    "Galleta Chocolate Mediana",       "Caja 1",  35.0),
+            ("GGAL070", "Galleta Galletita 70g",           "Caja 1",  28.0),
+            ("IMOCA",   "Imperial Moca",                   "Caja 2",  42.0),
+            ("IMOCP",   "Imperial Moca Plus",              "Caja 2",  45.0),
+            ("MCCE",    "Muffin Chocolate Chips Estándar", "Caja 2",  50.0),
+            ("SCCA",    "Sándwich Crema Caramelo",         "Caja 3",  38.0),
+            ("SECC090", "Selección Crema Choco 90g",       "Caja 3",  32.0),
+            ("SECPI",   "Selección Crema Pi",              "Caja 3",  33.0),
+            ("SEKOF",   "Sekof Original",                  "Caja 4",  40.0),
+            ("SEKQB",   "Sekof QB",                        "Caja 4",  41.0),
+            ("SEKRN",   "Sekof Relleno Natural",           "Caja 4",  39.0),
+            ("SEPASP",  "Selección Pasp",                  "Caja 5",  36.0),
+            ("SEPC",    "Selección Pecado",                "Caja 5",  37.0),
+            ("SEPEIC",  "Selección Peic",                  "Caja 5",  34.0),
+            ("SEPOD",   "Selección Pod",                   "Caja 6",  43.0),
+            ("SEPOF",   "Selección Pof",                   "Caja 6",  44.0),
+            ("SESCD",   "Selección SCD",                   "Caja 6",  31.0),
+            ("SGEP",    "Surtido Gep",                     "Caja 7",  48.0),
+            ("SKPXL",   "Sekof XL",                        "Caja 7",  55.0),
+        ]
+
         active_count = await conn.fetchval("SELECT COUNT(*) FROM active_skus")
         if active_count == 0:
-            # (sku, descripcion, caja, minutos_por_caja)
-            mock_products = [
-                ("GCMD",    "Galleta Chocolate Mediana",       "Caja 1",  35.0),
-                ("GGAL070", "Galleta Galletita 70g",           "Caja 1",  28.0),
-                ("IMOCA",   "Imperial Moca",                   "Caja 2",  42.0),
-                ("IMOCP",   "Imperial Moca Plus",              "Caja 2",  45.0),
-                ("MCCE",    "Muffin Chocolate Chips Estándar", "Caja 2",  50.0),
-                ("SCCA",    "Sándwich Crema Caramelo",         "Caja 3",  38.0),
-                ("SECC090", "Selección Crema Choco 90g",       "Caja 3",  32.0),
-                ("SECPI",   "Selección Crema Pi",              "Caja 3",  33.0),
-                ("SEKOF",   "Sekof Original",                  "Caja 4",  40.0),
-                ("SEKQB",   "Sekof QB",                        "Caja 4",  41.0),
-                ("SEKRN",   "Sekof Relleno Natural",           "Caja 4",  39.0),
-                ("SEPASP",  "Selección Pasp",                  "Caja 5",  36.0),
-                ("SEPC",    "Selección Pecado",                "Caja 5",  37.0),
-                ("SEPEIC",  "Selección Peic",                  "Caja 5",  34.0),
-                ("SEPOD",   "Selección Pod",                   "Caja 6",  43.0),
-                ("SEPOF",   "Selección Pof",                   "Caja 6",  44.0),
-                ("SESCD",   "Selección SCD",                   "Caja 6",  31.0),
-                ("SGEP",    "Surtido Gep",                     "Caja 7",  48.0),
-                ("SKPXL",   "Sekof XL",                        "Caja 7",  55.0),
-            ]
             async with conn.transaction():
-                for sku, desc, caja, mins in mock_products:
+                for sku, desc, caja, _mins in mock_products:
                     await conn.execute(
                         "INSERT INTO active_skus (sku, descripcion, caja) VALUES ($1, $2, $3) "
                         "ON CONFLICT (sku) DO NOTHING",
                         sku, desc, caja
                     )
+            logger.info("[DB] active_skus seed creado.")
+
+        pt_count = await conn.fetchval("SELECT COUNT(*) FROM product_times")
+        if pt_count == 0:
+            async with conn.transaction():
+                for sku, _desc, _caja, mins in mock_products:
                     await conn.execute(
                         "INSERT INTO product_times (sku, minutos_por_caja) VALUES ($1, $2) "
                         "ON CONFLICT (sku) DO NOTHING",
                         sku, mins
                     )
-            logger.info("[DB] Productos mock con caja y tiempos creados.")
+            logger.info("[DB] product_times seed creado.")
 
         # Seed/update product_times con nuevas columnas (idempotente)
         # Mapeo de SKU → (factor_empaque, categoria, minutos_por_unidad calculado)
@@ -345,21 +354,14 @@ async def init_db():
             ("SGEP",    8,  "Surtidos"),
             ("SKPXL",   8,  "Surtidos"),
         ]
-        await conn.execute("""
-            UPDATE product_times SET
-                factor_empaque = $2,
-                categoria = $3,
-                minutos_por_unidad = minutos_por_caja / $2
-            WHERE sku = $1 AND (factor_empaque IS NULL OR factor_empaque = 1)
-        """, product_times_data[0][0], product_times_data[0][1], product_times_data[0][2])
-
-        # Para cada SKU, hacer el update
+        # Cast explícito: $2 se usa como INTEGER (factor_empaque) y como divisor
+        # numérico. Sin casts, asyncpg deduce tipos inconsistentes y falla.
         for sku, factor, cat in product_times_data:
             await conn.execute("""
                 UPDATE product_times SET
-                    factor_empaque = $2,
+                    factor_empaque = $2::integer,
                     categoria = $3,
-                    minutos_por_unidad = minutos_por_caja / $2
+                    minutos_por_unidad = minutos_por_caja / $2::numeric
                 WHERE sku = $1 AND (factor_empaque IS NULL OR factor_empaque = 1)
             """, sku, factor, cat)
 
